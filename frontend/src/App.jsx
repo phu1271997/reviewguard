@@ -38,7 +38,13 @@ export default function App() {
   const [latest, setLatest] = useState(null);
 
   const me = (() => {
-    try { return getAccount().address; } catch { return null; }
+    try {
+      const acct = getAccount();
+      return acct ? acct.address : null;
+    } catch (e) {
+      console.error("Failed to load account:", e);
+      return null;
+    }
   })();
 
   const refresh = useCallback(async () => {
@@ -47,7 +53,8 @@ export default function App() {
       const list = await listAnalyses();
       setItems(Array.isArray(list) ? list : []);
     } catch (e) {
-      setError("Could not read analyses. Is VITE_CONTRACT_ADDRESS set correctly?");
+      console.error("Failed to read analyses:", e);
+      setError("Could not read analyses: " + (e?.message || e));
     } finally {
       setLoading(false);
     }
