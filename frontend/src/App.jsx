@@ -51,7 +51,11 @@ export default function App() {
     try {
       setError("");
       const list = await listAnalyses();
-      setItems(Array.isArray(list) ? list : []);
+      const itemsList = Array.isArray(list) ? list : [];
+      setItems(itemsList);
+      if (itemsList.length > 0) {
+        setLatest((prev) => prev || itemsList[itemsList.length - 1]);
+      }
     } catch (e) {
       console.error("Failed to read analyses:", e);
       setError("Could not read analyses: " + (e?.message || e));
@@ -74,8 +78,15 @@ export default function App() {
     setLatest(null);
     try {
       await analyze(target);
-      // fetch the fresh analysis for this URL to feature it
-      const found = await findByUrl(target);
+      // fetch the fresh analysis for this URL with polling to handle RPC lag
+      let found = null;
+      for (let i = 0; i < 5; i++) {
+        try {
+          found = await findByUrl(target);
+          if (found) break;
+        } catch (_) {}
+        await new Promise((r) => setTimeout(r, 2000));
+      }
       setLatest(found);
       setUrl("");
       await refresh();
@@ -150,7 +161,16 @@ export default function App() {
         ) : items.length === 0 ? (
           <div className="empty">No analyses yet. Paste a URL above to start.</div>
         ) : (
-          items.slice().reverse().map((a) => <Row key={a.analysis_id} a={a} />)
+          items.slice().reverse().map((a) => (
+            <Row
+              key={a.analysis_id}
+              a={a}
+              onSelect={() => {
+                setLatest(a);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          ))
         )}
       </section>
 
@@ -211,13 +231,16 @@ function FeatureCard({ a }) {
   );
 }
 
-function Row({ a }) {
+function Row({ a, onSelect }) {
   const meta = VERDICT_META[a.verdict] || VERDICT_META.UNRESOLVABLE;
   const [open, setOpen] = useState(false);
   const flags = Array.isArray(a.red_flags) ? a.red_flags.filter(Boolean) : [];
   return (
     <article className="row" style={{ "--vc": meta.color }}>
-      <button className="row-head" onClick={() => setOpen(!open)}>
+      <button className="row-head" onClick={() => {
+        onSelect();
+        setOpen(!open);
+      }}>
         <span className="score-chip" style={{ color: meta.color }}>
           {a.trust_score}
         </span>
