@@ -3,7 +3,7 @@
 // The contract address comes from VITE_CONTRACT_ADDRESS (set after you deploy on
 // Studio). Antigravity injects this into the Vercel environment.
 
-import { createClient, createAccount } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
@@ -13,14 +13,14 @@ let _account = null;
 
 export function getAccount() {
   if (!_account) {
-    const stored = localStorage.getItem("rg_pk");
-    if (stored) {
-      _account = createAccount(stored);
-    } else {
-      _account = createAccount();
-      // Persist a throwaway key so the same identity is reused across reloads.
-      try { localStorage.setItem("rg_pk", _account.privateKey); } catch (_) {}
+    let stored = localStorage.getItem("rg_pk");
+    if (!stored || stored === "undefined" || stored.length < 10) {
+      stored = generatePrivateKey();
+      try {
+        localStorage.setItem("rg_pk", stored);
+      } catch (_) {}
     }
+    _account = createAccount(stored);
   }
   return _account;
 }
