@@ -1,0 +1,1 @@
+Paste any review page URL and an on-chain contract reads the page live and judges how authentic the reviews look — no server in the middle.

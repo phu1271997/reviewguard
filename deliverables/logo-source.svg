@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241812"/>
+      <stop offset="1" stop-color="#0d0705"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#f4b490"/>
+      <stop offset="0.55" stop-color="#e07a45"/>
+      <stop offset="1" stop-color="#b4532a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.36" r="0.6">
+      <stop offset="0" stop-color="#e07a45" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#e07a45" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="shieldClip">
+      <path d="M256 78 L400 132 V262 C400 344 337 402 256 434 C175 402 112 344 112 262 V132 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Ground -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+
+  <!-- Inside the shield: 5-point star + a bar underneath (star-rating motif) -->
+  <g clip-path="url(#shieldClip)" fill="url(#mark)">
+    <!-- big star (centered around y=232, radius 76) -->
+    <path d="M256 156
+             L279 218
+             L346 219
+             L292 259
+             L312 322
+             L256 285
+             L200 322
+             L220 259
+             L166 219
+             L233 218 Z"/>
+  </g>
+
+  <!-- Score bars underneath the star: 3 dashes, 2 filled + 1 dimmed = "one review flagged" -->
+  <g fill="url(#mark)">
+    <rect x="188" y="356" width="42" height="16" rx="8"/>
+    <rect x="235" y="356" width="42" height="16" rx="8"/>
+    <rect x="282" y="356" width="42" height="16" rx="8" opacity="0.45"/>
+  </g>
+
+  <!-- Shield outline on top -->
+  <path d="M256 78 L400 132 V262 C400 344 337 402 256 434 C175 402 112 344 112 262 V132 Z"
+        fill="none" stroke="url(#mark)" stroke-width="24" stroke-linejoin="round"/>
+</svg>

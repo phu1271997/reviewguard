@@ -1,11 +1,19 @@
 # ReviewGuard
 
-**An on-chain fake-review detector.** Paste the URL of any review page — a Google
-Maps place, a marketplace product, a listing — and an **Intelligent Contract on
-GenLayer reads that page live** (`gl.nondet.web.render`) and **reasons with an
-LLM** (`gl.nondet.exec_prompt`) to judge how authentic the reviews look. It
-returns a verdict, a 0–100 trust score, and concrete red flags, all stored
-on-chain.
+**An on-chain fake-review detector.** Paste the URL of any review page — an App
+Store listing, a Google Maps place, a marketplace product — and an **Intelligent
+Contract on GenLayer reads that page live** (`gl.nondet.web.render`) and
+**reasons with an LLM** (`gl.nondet.exec_prompt`) to judge how authentic the
+reviews look. It returns a verdict, a 0–100 trust score, and concrete red flags,
+all stored on-chain.
+
+- **Live app:** https://reviewguard-chi.vercel.app/
+- **Deployed contract:** [`0x99e35870DBDDa556C5f11DF6542d6E31EA074655`](https://explorer-studio.genlayer.com/address/0x99e35870DBDDa556C5f11DF6542d6E31EA074655) on GenLayer **studionet** (status: Preview)
+- **Sample verdicts on-chain today:**
+  `TRUSTWORTHY` — [Discord on the App Store](https://apps.apple.com/us/app/discord/id985746746) (trust 82) ·
+  `SUSPICIOUS` — [Temu on the App Store](https://apps.apple.com/us/app/temu-shop-like-a-billionaire/id1641486558) (trust 35) ·
+  `MIXED` — [Facebook on the App Store](https://apps.apple.com/us/app/facebook/id284882215) (trust 58) ·
+  `UNRESOLVABLE` — [Wikipedia article](https://en.wikipedia.org/wiki/Inception_(film)) (not a review page)
 
 > **Why this dies without GenLayer:** the whole product is an on-chain agent that
 > *fetches a web page and judges writing authenticity*. A normal smart contract
@@ -49,19 +57,31 @@ nondet call.
 ```
 reviewguard/
 ├── contracts/
-│   ├── ReviewGuard.py     # the Intelligent Contract (heart of the project)
-│   └── storage_test.py    # minimal sanity contract — deploy FIRST
-├── frontend/              # genlayer-js + React (Vite) app
-│   ├── src/genlayer.js    # contract client wrapper
-│   ├── src/App.jsx        # analyze flow + trust gauge + history
+│   ├── ReviewGuard.py         # the Intelligent Contract (heart of the project)
+│   └── storage_test.py        # minimal sanity contract — deploy FIRST
+├── frontend/                  # genlayer-js + React (Vite) app
+│   ├── src/genlayer.js        # contract client wrapper
+│   ├── src/App.jsx            # analyze flow + trust gauge + history
 │   └── ...
-├── scripts/deploy.js      # scriptable testnet deploy
+├── tests/                     # gltest test suite (see below)
+│   ├── conftest.py            # session-scoped deploy + retry helper
+│   ├── test_deploy_and_views.py
+│   ├── test_url_validation.py
+│   └── test_analyze_edge_cases.py   # opt-in slow tests: real LLM + web.render
+├── gltest.config.yaml         # gltest network config (defaults to studionet)
+├── pytest.ini                 # pytest markers (slow)
+├── scripts/deploy.js          # scriptable studionet deploy
 └── README.md
 ```
 
 ---
 
-## 1. Deploy the contract on GenLayer Studio
+## 1. Deploy your own contract on GenLayer Studio (only if you want a fresh one)
+
+The address above is already live and the frontend at `reviewguard-chi.vercel.app`
+points at it. If you want to redeploy under your own account, follow these steps
+and then update `VITE_CONTRACT_ADDRESS`.
+
 
 1. Open **https://studio.genlayer.com/run-debug**
 2. **Settings → Reset Storage → Confirm**, then hard refresh (Cmd+Shift+R / Ctrl+Shift+F5).
@@ -102,6 +122,36 @@ appear, and the analysis is added to the on-chain history.
 The frontend is a standard Vite + React app and builds cleanly (`npm run build`
 produces `dist/`). It pins `genlayer-js@^1.1.8`, which exports the `studionet`
 chain used to reach Studio.
+
+---
+
+## 3. Tests
+
+The suite uses [`gltest`](https://pypi.org/project/genlayer-test/) and defaults
+to studionet (same network the live app targets). Tests deploy a fresh
+`ReviewGuard` contract per session and reuse it.
+
+```bash
+python3 -m pip install genlayer-test
+gltest -m "not slow"     # 8 fast tests (~3 min) — deploys once, hits view methods + URL validation
+gltest                   # +3 slow tests (~5 min extra) — real LLM + web.render across dead URLs,
+                         #   non-review pages, and a happy-path App Store review
+```
+
+Fast tests cover: deploy succeeds and initial state is empty; view methods
+(`get_total`, `list_analyses`, `find_by_url`, `get_analysis`) shapes and
+missing-id error; URL validation rejects `ftp://`, missing scheme, empty
+string, `javascript:`, and other non-http schemes — as failed executions, not
+state advances.
+
+Slow tests cover the edge cases the contract must degrade on: an unreachable
+domain → `UNRESOLVABLE` (trust 0), a reachable-but-not-review page (Wikipedia)
+→ `UNRESOLVABLE`, and a real App Store review page → any of the valid verdicts
+with a well-formed record. They also confirm `find_by_url` caches the analysis
+id so a repeat lookup is free.
+
+Studio RPC is occasionally flaky (transient `RemoteDisconnected`), so the tests
+retry each call up to 3× with backoff via `retry_call` in `tests/conftest.py`.
 
 ---
 
