@@ -7,11 +7,11 @@ import typing
 from dataclasses import dataclass
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # ReviewGuard.py
 #
 # An on-chain "fake-review detector". A user submits the URL of a review page
-# (a Google Maps place, an Amazon/marketplace product page, a Yelp listing…).
+# (a Google Maps place, an Amazon/marketplace product page, a Yelp listing...).
 # The contract READS THAT PAGE LIVE on-chain (gl.nondet.web.render) and REASONS
 # with an LLM (gl.nondet.exec_prompt) to judge how trustworthy the reviews look:
 # bot-like language, generic copy-paste praise, suspicious bursts, incentivized
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 #   The whole product is "an on-chain agent that reads a review page and judges
 #   whether the reviews are authentic." A normal smart contract cannot fetch a
 #   web page or reason about writing style. Remove the web-read + LLM and there
-#   is nothing left. No money changes hands — the judgement itself is the product.
+#   is nothing left. No money changes hands -- the judgement itself is the product.
 #
 # CONSENSUS CHECKS MEANING, NOT SHAPE (Axis 2):
 #   The non-deterministic analysis is wrapped in
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 #   JSON. They use NLP to check the leader's and their own analysis reach the
 #   SAME verdict and a close trust score. Two validators disagreeing on the
 #   verdict cannot both pass.
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 
 
 # Verdict vocabulary
@@ -77,13 +77,13 @@ class Contract(gl.Contract):
         self.owner = gl.message.sender_address
         self.next_id = bigint(0)
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # -------------------------------------------------------------------------
     # WRITE: analyze a review page. This is the core nondet method.
     #
     # It reads the page live + asks the LLM to grade authenticity, wrapped in
     # eq_principle.prompt_comparative so validators agree on MEANING. The result
     # is stored and can be read back with get_analysis / list_analyses.
-    # ─────────────────────────────────────────────────────────────────────────
+    # -------------------------------------------------------------------------
     @gl.public.write
     def analyze(self, url: str) -> int:
         if not (url.startswith("https://") or url.startswith("http://")):
@@ -145,9 +145,9 @@ class Contract(gl.Contract):
         self.next_id = bigint(aid + 1)
         return aid
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # VIEWS (read-only) — for the frontend
-    # ─────────────────────────────────────────────────────────────────────────
+    # -------------------------------------------------------------------------
+    # VIEWS (read-only) -- for the frontend
+    # -------------------------------------------------------------------------
     @gl.public.view
     def get_analysis(self, analysis_id: int) -> str:
         key = str(analysis_id)
@@ -183,9 +183,9 @@ class Contract(gl.Contract):
         return json.dumps(_to_dict(self.analyses[key]))
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 # Module-level helpers (kept out of the class; nondet blocks cannot touch self)
-# ═════════════════════════════════════════════════════════════════════════════
+# =============================================================================
 def _safe_render(url: str) -> typing.Optional[str]:
     """Render a page to text; return None on any failure (dead/empty page)."""
     try:
