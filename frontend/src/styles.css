@@ -39,7 +39,32 @@ code { font-family: "JetBrains Mono", monospace; color: var(--muted); font-size:
   font-family: "JetBrains Mono", monospace; font-size: 16px; font-weight: 500;
 }
 .tag { max-width: 620px; color: #5c554b; line-height: 1.6; margin: 16px 0 10px; font-size: 15px; }
-.you { font-size: 13px; color: var(--muted); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 999px; padding: 5px 12px; text-decoration: none;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip-muted { color: var(--muted); }
+.chip-muted:hover { color: var(--muted); border-color: var(--line); cursor: default; }
+.chip code { color: inherit; }
+
+.samples { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.samples-label { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.sample {
+  background: transparent; border: 1px dashed var(--line);
+  padding: 6px 12px; font-size: 12px; font-weight: 500;
+  color: #5c554b; border-radius: 999px;
+}
+.sample:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); border-style: solid; }
+.sample:disabled { opacity: .5; cursor: not-allowed; }
+
+.consensus a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.consensus a:hover { text-decoration: underline; }
+.foot a { color: var(--accent); text-decoration: none; }
+.foot a:hover { text-decoration: underline; }
 
 .panel { margin: 26px 0; }
 .field { display: grid; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 500; }

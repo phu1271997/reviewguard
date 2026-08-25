@@ -14,6 +14,8 @@ import {
   listAnalyses,
   analyze,
   findByUrl,
+  explorerAddressUrl,
+  explorerTxUrl,
 } from "./genlayer.js";
 import "./styles.css";
 
@@ -23,6 +25,14 @@ const VERDICT_META = {
   SUSPICIOUS: { color: "var(--bad)", label: "Suspicious" },
   UNRESOLVABLE: { color: "var(--muted)", label: "Unresolvable" },
 };
+
+// Server-side-rendered review pages that headless Chromium can actually read.
+// Trustpilot / G2 / Yelp / Goodreads are behind bot-walls and return empty.
+const SAMPLES = [
+  { label: "Trustworthy example", url: "https://apps.apple.com/us/app/discord/id985746746" },
+  { label: "Mixed example", url: "https://apps.apple.com/us/app/facebook/id284882215" },
+  { label: "Suspicious example", url: "https://apps.apple.com/us/app/temu-shop-like-a-billionaire/id1641486558" },
+];
 
 function short(addr) {
   if (!addr) return "—";
@@ -36,6 +46,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [latest, setLatest] = useState(null);
+  const [txHash, setTxHash] = useState("");
 
   const me = (() => {
     try {
@@ -66,8 +77,7 @@ export default function App() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  async function onAnalyze() {
-    const target = url.trim();
+  async function runAnalyze(target) {
     if (!target) return;
     if (!/^https?:\/\//i.test(target)) {
       setError("Enter a full URL starting with http:// or https://");
@@ -76,8 +86,9 @@ export default function App() {
     setError("");
     setBusy(true);
     setLatest(null);
+    setTxHash("");
     try {
-      await analyze(target);
+      await analyze(target, (hash) => setTxHash(hash));
       // fetch the fresh analysis for this URL with polling to handle RPC lag
       let found = null;
       for (let i = 0; i < 5; i++) {
@@ -95,6 +106,10 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function onAnalyze() {
+    runAnalyze(url.trim());
   }
 
   if (!CONTRACT_ADDRESS) {
@@ -121,7 +136,14 @@ export default function App() {
           bot patterns, copy-paste praise, suspicious bursts. The judgement lives
           on-chain, not on our server.
         </p>
-        <div className="you">you: <code>{short(me)}</code></div>
+        <div className="chip-row">
+          <a className="chip" href={explorerAddressUrl(CONTRACT_ADDRESS)} target="_blank" rel="noreferrer">
+            contract <code>{short(CONTRACT_ADDRESS)}</code> ↗
+          </a>
+          <span className="chip chip-muted">
+            wallet <code>{short(me)}</code> · burner auto-funded on studionet
+          </span>
+        </div>
       </header>
 
       <section className="panel">
@@ -129,21 +151,44 @@ export default function App() {
           Review page URL
           <div className="input-row">
             <input
-              placeholder="https://www.google.com/maps/place/…  or  a product page"
+              placeholder="https://apps.apple.com/us/app/discord/id985746746"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !busy) onAnalyze(); }}
+              disabled={busy}
             />
             <button className="primary" disabled={busy} onClick={onAnalyze}>
               {busy ? "Analyzing…" : "Analyze"}
             </button>
           </div>
         </label>
+        <div className="samples">
+          <span className="samples-label">Try:</span>
+          {SAMPLES.map((s) => (
+            <button
+              key={s.url}
+              className="sample"
+              disabled={busy}
+              onClick={() => { setUrl(s.url); runAnalyze(s.url); }}
+              title={s.url}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         {busy && (
           <div className="consensus">
             Reading the page on-chain and reaching validator consensus. This
-            usually takes 5–30 seconds — the LLM analysis is running across
-            multiple validators.
+            usually takes 20–90 seconds — a headless browser fetches the page and
+            multiple validator LLMs must agree on the verdict.
+            {txHash && (
+              <>
+                {" "}
+                <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer">
+                  Track this transaction ↗
+                </a>
+              </>
+            )}
           </div>
         )}
         {error && <div className="banner error">{error}</div>}
@@ -175,8 +220,10 @@ export default function App() {
       </section>
 
       <footer className="foot">
-        Judgement performed by an Intelligent Contract on GenLayer ·{" "}
-        <code>{short(CONTRACT_ADDRESS)}</code>
+        Judgement performed by an Intelligent Contract on GenLayer studionet ·{" "}
+        <a href={explorerAddressUrl(CONTRACT_ADDRESS)} target="_blank" rel="noreferrer">
+          {short(CONTRACT_ADDRESS)} ↗
+        </a>
       </footer>
     </div>
   );

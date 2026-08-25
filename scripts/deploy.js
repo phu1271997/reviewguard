@@ -6,6 +6,12 @@
 //
 // Usage:
 //   GENLAYER_PRIVATE_KEY=0x... node scripts/deploy.js
+//
+// Studionet auto-funds burner keys enough for deployment, so a fresh account
+// with no GENLAYER_PRIVATE_KEY will usually work for demo purposes. If a write
+// fails with "insufficient funds", top up the account from the Studio
+// Accounts panel (Studio has no public faucet — testnet does, but studionet
+// and testnet are separate networks).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,7 +28,8 @@ async function main() {
   if (!pk) {
     console.log("No GENLAYER_PRIVATE_KEY set — generated a throwaway account:");
     console.log("  address:", account.address);
-    console.log("  (fund it on the Studio faucet before deploying for real)\n");
+    console.log("  (studionet auto-funds burners for demo txs; top up from the");
+    console.log("   Studio Accounts panel if a write fails with insufficient funds)\n");
   }
 
   const client = createClient({ chain: studionet, account });

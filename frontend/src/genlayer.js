@@ -7,6 +7,9 @@ import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
+export const EXPLORER_BASE = "https://explorer-studio.genlayer.com";
+export const explorerAddressUrl = (addr) => `${EXPLORER_BASE}/address/${addr}`;
+export const explorerTxUrl = (hash) => `${EXPLORER_BASE}/tx/${hash}`;
 
 let _client = null;
 let _account = null;
@@ -76,7 +79,7 @@ export async function findByUrl(url) {
 }
 
 // ── Write (the nondet analysis; takes 5–30s while validators reach consensus) ─
-export async function analyze(url) {
+export async function analyze(url, onTx) {
   const client = getClient();
   const hash = await client.writeContract({
     address: CONTRACT_ADDRESS,
@@ -84,6 +87,7 @@ export async function analyze(url) {
     args: [url],
     value: 0n,
   });
+  if (typeof onTx === "function") onTx(hash);
   await client.waitForTransactionReceipt({
     hash,
     status: "FINALIZED",
