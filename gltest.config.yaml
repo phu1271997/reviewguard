@@ -1,0 +1,22 @@
+# gltest config — see https://docs.genlayer.com/api-references/genlayer-test
+# Tests target studionet by default so they run against the real hosted
+# GenLayer Studio (the same network the deployed dApp uses).
+#
+# Usage:
+#   gltest                             # runs against studionet
+#   gltest --network localnet          # requires local GenLayer stack
+#
+# The tests deploy a fresh ReviewGuard contract per session (session-scoped
+# fixture) so they don't depend on any single deployed address.
+
+networks:
+  default: studionet
+  studionet:
+    default_wait_interval: 5000
+    default_wait_retries: 60
+  localnet:
+    default_wait_interval: 3000
+    default_wait_retries: 40
+
+paths:
+  contracts: contracts
