@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--paper);
@@ -33,11 +34,13 @@ code { font-family: "JetBrains Mono", monospace; color: var(--muted); font-size:
   letter-spacing: -0.01em;
 }
 .mark {
-  display: inline-grid; place-items: center;
-  width: 42px; height: 42px; border-radius: 10px;
-  background: var(--accent); color: var(--card);
-  font-family: "JetBrains Mono", monospace; font-size: 16px; font-weight: 500;
+  width: 52px; height: 52px; border-radius: 12px;
+  display: block; object-fit: contain;
+  background: #fff;
+  padding: 4px;
+  border: 1px solid var(--line);
 }
+.brand-name { display: inline-block; }
 .tag { max-width: 620px; color: #5c554b; line-height: 1.6; margin: 16px 0 10px; font-size: 15px; }
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; }
@@ -153,8 +156,99 @@ button:disabled { opacity: .55; cursor: progress; }
 .row-body ul { padding-left: 18px; }
 .row-body a { color: var(--accent); font-size: 13px; }
 
-.foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
-  color: var(--muted); font-size: 12px; }
+.foot {
+  margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 12px;
+}
+.foot-row {
+  display: flex; justify-content: space-between; gap: 24px;
+  flex-wrap: wrap; align-items: baseline;
+}
+.foot strong { color: var(--ink); font-weight: 600; }
+.foot-links { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot-fine { margin-top: 10px; word-break: break-all; }
+.foot-fine code { color: var(--muted); }
+
+/* ── EXPLAINER SECTIONS (problem / how it works / how to use) ─────────────── */
+.explain {
+  margin: 44px 0 8px;
+  padding: 30px 0 12px;
+  border-top: 1px solid var(--line);
+}
+.explain-eyebrow {
+  font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--accent); font-weight: 600;
+}
+.explain-title {
+  font-family: "Fraunces", serif; font-size: 28px; font-weight: 600;
+  line-height: 1.2; margin: 8px 0 14px; color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.explain-lede {
+  color: #40392f; line-height: 1.7; font-size: 15.5px;
+  margin: 0 0 22px; max-width: 720px;
+}
+.explain-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+}
+.explain-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 18px 18px 16px;
+}
+.explain-card .explain-h {
+  font-family: "Fraunces", serif; font-size: 16px; font-weight: 600;
+  color: var(--ink); margin-bottom: 8px;
+}
+.explain-card p { margin: 0; line-height: 1.6; font-size: 14px; color: #4a4239; }
+
+/* Flow list — the numbered "how it works" pipeline */
+.flow { list-style: none; padding: 0; margin: 4px 0 0; }
+.flow li {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.flow li:last-child { border-bottom: none; }
+.flow-num {
+  flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--card);
+  font-family: "Fraunces", serif; font-weight: 600; font-size: 16px;
+  margin-top: 2px;
+}
+.flow-h {
+  font-family: "Fraunces", serif; font-size: 17px; font-weight: 600;
+  color: var(--ink); margin-bottom: 4px;
+}
+.flow p { margin: 0; line-height: 1.65; color: #40392f; font-size: 14.5px; }
+.flow code, .how-step code, .explain-card code {
+  background: rgba(180, 83, 42, 0.09);
+  color: var(--accent);
+  padding: 1px 6px; border-radius: 4px; font-size: 12.5px;
+}
+
+/* How to use — 6-cell grid */
+.how-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+}
+.how-step {
+  background: var(--card); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 16px 18px;
+}
+.how-step .how-h {
+  font-family: "Fraunces", serif; font-size: 16px; font-weight: 600;
+  color: var(--ink); margin-bottom: 6px;
+}
+.how-step p { margin: 0; line-height: 1.6; font-size: 14px; color: #40392f; }
+.how-step em { color: var(--accent); font-style: normal; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .explain-grid { grid-template-columns: 1fr; }
+  .how-grid { grid-template-columns: 1fr; }
+  .explain-title { font-size: 24px; }
+  .foot-row { flex-direction: column; }
+}
 
 @media (max-width: 560px) {
   .brand { font-size: 27px; }
