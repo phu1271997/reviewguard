@@ -271,7 +271,7 @@ function Hero({ me, stats }) {
         </div>
         <div className="chip-row">
           <span className="chip chip-live">
-            <span className="live-dot" /> studionet · live
+            <span className="live-dot" /> studionet · live · v0.2.0
           </span>
           <a className="chip" href={explorerAddressUrl(CONTRACT_ADDRESS)}
              target="_blank" rel="noreferrer">
