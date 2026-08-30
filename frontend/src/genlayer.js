@@ -96,3 +96,41 @@ export async function analyze(url, onTx) {
   });
   return hash;
 }
+
+// ── Phase 2 — appeal / dispute flow ─────────────────────────────────────────
+export async function listAppeals() {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "list_appeals",
+    args: [],
+  });
+  return parseJSON(res, []);
+}
+
+export async function appealsFor(analysisId) {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "appeals_for",
+    args: [analysisId],
+  });
+  return parseJSON(res, []);
+}
+
+export async function fileAppeal(analysisId, reason, stakeWei, onTx) {
+  const client = getClient();
+  const hash = await client.writeContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "file_appeal",
+    args: [analysisId, reason],
+    value: BigInt(stakeWei),
+  });
+  if (typeof onTx === "function") onTx(hash);
+  await client.waitForTransactionReceipt({
+    hash,
+    status: "FINALIZED",
+    interval: 5000,
+    retries: 60,
+  });
+  return hash;
+}
+

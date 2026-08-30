@@ -4,6 +4,59 @@ All notable changes to ReviewGuard are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with
 milestone tags aligned to the GenLayer Builder Program Milestone submissions.
 
+## [0.3.0] — 2026-08-30 — Phase 2: Appeal / Dispute Flow
+
+Bundle submitted as Phase 2 Milestone. Contract redeployed on studionet at
+`0xda89fE3e166A21C4879fA8479F530B3e2e724eAe` (previous: `0x07c581dd42f4EEf985b32C4e62cc115dEF128585`).
+
+### Feature — Appeal / dispute flow (rubric Loai 3b)
+
+- **New payable write**: `file_appeal(analysis_id: int, reason: str) -> int`
+  attaches native GEN stake (min `MIN_APPEAL_STAKE = 1` wei on demo network)
+  and re-analyzes the same URL under an **adversarial prompt**. The LLM is
+  told the prior verdict, asked to actively look for reasons that verdict
+  is wrong, and given the appellant's written reason as data.
+- **`APPEAL_PRINCIPLE`** reuses the tightened `CREDIBILITY_PRINCIPLE`
+  (verdict-label exact match + trust_score within 15pts), so a single
+  validator cannot flip an outcome — the re-analysis must clear the same
+  consensus bar as the initial analysis.
+- **Appeal outcome vocabulary** stored on-chain:
+  `OVERTURNED` (re-analysis reached a different verdict), `UPHELD`
+  (verdict unchanged), `UNRESOLVABLE` (page couldn't be re-fetched or
+  re-graded).
+- **New storage struct** `Appeal` (`@allow_storage @dataclass`) records
+  appellant address, stake, sanitized reason, original verdict + score,
+  new verdict + score + summary + red flags, status, and creation flag.
+- **New views**: `get_appeal(id)`, `get_appeal_total()`, `list_appeals()`,
+  `appeals_for(analysis_id)`.
+- **New helper** `_build_appeal_prompt()` reuses the same JSON envelope as
+  the initial analysis so downstream coercion is unchanged.
+- **Reason sanitization** mirrors URL / page hardening: length caps
+  (`MIN_REASON_LEN = 10`, `MAX_REASON_LEN = 2000`), reject `\x00` / `\r`,
+  canary-scrub, echoed inside `=== APPELLANT REASON ===` fences.
+
+### Contract API
+- `contract_version()` bumped to `"0.3.0"`.
+- Storage: added `appeals: TreeMap[str, Appeal]` and
+  `next_appeal_id: bigint`.
+
+### Frontend
+- **Appeal button** on every result card and past-analysis row.
+- **AppealModal** with reason textarea + stake input; live "Track appeal
+  tx ↗" link during consensus wait.
+- **New Appeals section** with 4 tile counters (upheld / overturned /
+  unresolvable / total) plus expandable appeal cards showing
+  original → new verdict + score delta + reason + re-analysis summary +
+  red flags.
+- **Stats strip** widened to 7 tiles (adds Appeals count).
+- **Nav** adds "Appeals" anchor; header live chip bumped to `v0.3.0`.
+- `VITE_CONTRACT_ADDRESS` env swapped on Vercel Production.
+
+### Tests
+- New `tests/test_appeal.py` (10 cases): view invariants at zero state,
+  guards against missing analysis id, short reasons, oversize reasons,
+  control chars in reason, and zero-stake appeal.
+
 ## [0.2.0] — 2026-08-29 — Phase 1: Foundation Hardening
 
 Bundle submitted as Phase 1 Milestone. Contract redeployed on studionet at

@@ -9,6 +9,8 @@ import {
   CONTRACT_ADDRESS,
   getAccount,
   listAnalyses,
+  listAppeals,
+  fileAppeal,
   analyze,
   findByUrl,
   explorerAddressUrl,
@@ -37,9 +39,16 @@ const NAV_ITEMS = [
   { id: "signals", label: "Signals" },
   { id: "cases", label: "Use cases" },
   { id: "analyses", label: "History" },
+  { id: "appeals", label: "Appeals" },
   { id: "compare", label: "Compare" },
   { id: "faq", label: "FAQ" },
 ];
+
+const APPEAL_STATUS_META = {
+  OVERTURNED: { color: "var(--bad)", label: "Overturned" },
+  UPHELD: { color: "var(--good)", label: "Upheld" },
+  UNRESOLVABLE: { color: "var(--muted)", label: "Unresolvable" },
+};
 
 function short(addr) {
   if (!addr) return "—";
@@ -48,12 +57,14 @@ function short(addr) {
 
 export default function App() {
   const [items, setItems] = useState([]);
+  const [appeals, setAppeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [latest, setLatest] = useState(null);
   const [txHash, setTxHash] = useState("");
+  const [appealTarget, setAppealTarget] = useState(null); // {analysis_id, url, verdict}
 
   const me = (() => {
     try { return getAccount()?.address ?? null; } catch (e) { return null; }
@@ -62,12 +73,16 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError("");
-      const list = await listAnalyses();
+      const [list, aList] = await Promise.all([
+        listAnalyses().catch(() => []),
+        listAppeals().catch(() => []),
+      ]);
       const arr = Array.isArray(list) ? list : [];
       setItems(arr);
+      setAppeals(Array.isArray(aList) ? aList : []);
       if (arr.length > 0) setLatest((prev) => prev || arr[arr.length - 1]);
     } catch (e) {
-      setError("Could not read analyses: " + (e?.message || e));
+      setError("Could not read state: " + (e?.message || e));
     } finally {
       setLoading(false);
     }
@@ -85,8 +100,8 @@ export default function App() {
       if (v !== "UNRESOLVABLE") { sumScore += Number(a.trust_score) || 0; scoredCount++; }
     }
     const avg = scoredCount > 0 ? Math.round(sumScore / scoredCount) : null;
-    return { total, bucket, avg };
-  }, [items]);
+    return { total, bucket, avg, appealTotal: appeals.length };
+  }, [items, appeals]);
 
   async function runAnalyze(target) {
     if (!target) return;
@@ -113,6 +128,19 @@ export default function App() {
   }
 
   function onAnalyze() { runAnalyze(url.trim()); }
+
+  async function onFileAppeal({ analysisId, reason, stakeWei }) {
+    setError(""); setBusy(true); setTxHash("");
+    try {
+      await fileAppeal(analysisId, reason, stakeWei, (h) => setTxHash(h));
+      setAppealTarget(null);
+      await refresh();
+    } catch (e) {
+      setError("Appeal failed: " + (e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!CONTRACT_ADDRESS) {
     return (
@@ -178,7 +206,17 @@ export default function App() {
           {error && <div className="banner error">{error}</div>}
         </section>
 
-        {latest && <FeatureCard a={latest} />}
+        {latest && (
+          <FeatureCard
+            a={latest}
+            onAppeal={() => setAppealTarget({
+              analysis_id: latest.analysis_id,
+              url: latest.url,
+              verdict: latest.verdict,
+              trust_score: latest.trust_score,
+            })}
+          />
+        )}
 
         <ProblemSection />
         <VerdictSpecSection />
@@ -206,10 +244,17 @@ export default function App() {
           ) : (
             items.slice().reverse().map((a) => (
               <Row key={a.analysis_id} a={a}
-                onSelect={() => { setLatest(a); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+                onSelect={() => { setLatest(a); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                onAppeal={() => setAppealTarget({
+                  analysis_id: a.analysis_id, url: a.url, verdict: a.verdict, trust_score: a.trust_score,
+                })} />
             ))
           )}
         </section>
+
+        <AppealsSection appeals={appeals} items={items} onOpenAppeal={(a) => setAppealTarget({
+          analysis_id: a.analysis_id, url: a.url, verdict: a.verdict, trust_score: a.trust_score,
+        })} />
 
         <CompareSection />
         <FAQSection />
@@ -217,6 +262,16 @@ export default function App() {
 
         <Footer />
       </div>
+
+      {appealTarget && (
+        <AppealModal
+          target={appealTarget}
+          busy={busy}
+          txHash={txHash}
+          onClose={() => setAppealTarget(null)}
+          onSubmit={onFileAppeal}
+        />
+      )}
     </>
   );
 }
@@ -271,7 +326,7 @@ function Hero({ me, stats }) {
         </div>
         <div className="chip-row">
           <span className="chip chip-live">
-            <span className="live-dot" /> studionet · live · v0.2.0
+            <span className="live-dot" /> studionet · live · v0.3.0
           </span>
           <a className="chip" href={explorerAddressUrl(CONTRACT_ADDRESS)}
              target="_blank" rel="noreferrer">
@@ -291,11 +346,12 @@ function Hero({ me, stats }) {
 // ────────────────────────────────────────────────────────────────────────────
 function StatsStrip({ stats }) {
   const tiles = [
-    { label: "Analyses on-chain", value: stats.total, sub: "since deploy" },
+    { label: "Analyses", value: stats.total, sub: "since deploy" },
     { label: "Trustworthy", value: stats.bucket.TRUSTWORTHY, cls: "good" },
     { label: "Mixed", value: stats.bucket.MIXED, cls: "warn" },
     { label: "Suspicious", value: stats.bucket.SUSPICIOUS, cls: "bad" },
     { label: "Unresolvable", value: stats.bucket.UNRESOLVABLE, sub: "not a review page" },
+    { label: "Appeals", value: stats.appealTotal, sub: "Phase 2 flow" },
     { label: "Avg trust score", value: stats.avg ?? "—", sub: "verdicts ≠ Unresolvable" },
   ];
   return (
@@ -778,7 +834,7 @@ function Gauge({ score, color }) {
   );
 }
 
-function FeatureCard({ a }) {
+function FeatureCard({ a, onAppeal }) {
   const meta = VERDICT_META[a.verdict] || VERDICT_META.UNRESOLVABLE;
   const flags = Array.isArray(a.red_flags) ? a.red_flags.filter(Boolean) : [];
   return (
@@ -789,6 +845,11 @@ function FeatureCard({ a }) {
           <span className="verdict-pill" style={{ background: meta.color }}>{meta.label}</span>
           <a className="feature-url" href={a.url} target="_blank" rel="noreferrer">{a.url} ↗</a>
           {a.summary && <p className="feature-summary">{a.summary}</p>}
+          {onAppeal && (
+            <button className="appeal-btn" onClick={onAppeal}>
+              Disagree? File an on-chain appeal →
+            </button>
+          )}
         </div>
       </div>
       {flags.length > 0 && (
@@ -801,7 +862,155 @@ function FeatureCard({ a }) {
   );
 }
 
-function Row({ a, onSelect }) {
+// ────────────────────────────────────────────────────────────────────────────
+// APPEALS SECTION + MODAL + ROW
+// ────────────────────────────────────────────────────────────────────────────
+function AppealsSection({ appeals, items, onOpenAppeal }) {
+  const analysesById = new Map(items.map((a) => [a.analysis_id, a]));
+  const counts = { OVERTURNED: 0, UPHELD: 0, UNRESOLVABLE: 0 };
+  for (const a of appeals) if (a.status in counts) counts[a.status]++;
+  return (
+    <section className="explain" id="appeals">
+      <div className="explain-eyebrow">Appeal / dispute flow</div>
+      <h2 className="explain-title">Disagree with a verdict? Stake and challenge it.</h2>
+      <p className="explain-lede">
+        The contract exposes a payable <code>file_appeal(analysis_id, reason)</code>
+        method. Anyone can attach GEN stake to force a re-analysis of the same
+        URL under an <em>adversarial</em> prompt — the LLM is told the prior
+        verdict and asked to actively look for reasons it is wrong, guided by
+        the appellant's reason. The re-analysis runs through the same
+        consensus check as the initial analysis, so a single validator cannot
+        flip the outcome. Overturned verdicts are labelled on-chain.
+      </p>
+      <div className="appeal-counts">
+        <div className="appeal-count">
+          <span className="appeal-count-num" style={{ color: "var(--good)" }}>{counts.UPHELD}</span>
+          <span>upheld</span>
+        </div>
+        <div className="appeal-count">
+          <span className="appeal-count-num" style={{ color: "var(--bad)" }}>{counts.OVERTURNED}</span>
+          <span>overturned</span>
+        </div>
+        <div className="appeal-count">
+          <span className="appeal-count-num" style={{ color: "var(--muted)" }}>{counts.UNRESOLVABLE}</span>
+          <span>unresolvable</span>
+        </div>
+        <div className="appeal-count">
+          <span className="appeal-count-num">{appeals.length}</span>
+          <span>total appeals</span>
+        </div>
+      </div>
+      {appeals.length === 0 ? (
+        <div className="empty">
+          No appeals yet. Scroll up, run an analysis, then click <em>Disagree?</em> on the result.
+        </div>
+      ) : (
+        <div className="appeal-list">
+          {appeals.slice().reverse().map((a) => (
+            <AppealRow key={a.appeal_id} a={a}
+              onReAppeal={() => {
+                const src = analysesById.get(a.analysis_id);
+                if (src) onOpenAppeal(src);
+              }} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AppealRow({ a, onReAppeal }) {
+  const [open, setOpen] = useState(false);
+  const meta = APPEAL_STATUS_META[a.status] || APPEAL_STATUS_META.UNRESOLVABLE;
+  const flags = Array.isArray(a.new_red_flags) ? a.new_red_flags.filter(Boolean) : [];
+  return (
+    <article className="appeal-card" style={{ "--vc": meta.color }}>
+      <button className="appeal-head" onClick={() => setOpen(!open)}>
+        <span className="verdict-pill" style={{ background: meta.color }}>{meta.label}</span>
+        <span className="appeal-shift">
+          <code>{a.original_verdict} {a.original_score}</code>
+          <span className="arrow"> → </span>
+          <code>{a.new_verdict} {a.new_score}</code>
+        </span>
+        <span className="appeal-stake">stake {String(a.stake)} wei</span>
+        <span className="row-caret">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="appeal-body">
+          <div className="appeal-body-h">Appellant reason</div>
+          <p>{a.reason}</p>
+          {a.new_summary && (<>
+            <div className="appeal-body-h">Re-analysis summary</div>
+            <p>{a.new_summary}</p>
+          </>)}
+          {flags.length > 0 && (<>
+            <div className="appeal-body-h">Re-analysis red flags</div>
+            <ul>{flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          </>)}
+          {onReAppeal && a.status !== "OVERTURNED" && (
+            <button className="appeal-btn" onClick={onReAppeal}>
+              File another appeal on this analysis →
+            </button>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function AppealModal({ target, busy, txHash, onClose, onSubmit }) {
+  const [reason, setReason] = useState("");
+  const [stake, setStake] = useState("1");
+  const canSubmit = !busy && reason.trim().length >= 10 && Number(stake) >= 1;
+  return (
+    <div className="modal-backdrop" onClick={busy ? undefined : onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} disabled={busy}>×</button>
+        <div className="explain-eyebrow">File an appeal</div>
+        <h3 className="modal-title">Challenge this verdict on-chain</h3>
+        <p className="modal-lede">
+          You are appealing analysis <code>#{target.analysis_id}</code> on{" "}
+          <a href={target.url} target="_blank" rel="noreferrer">{target.url}</a>{" "}
+          (current verdict: <strong>{target.verdict}</strong>, score {target.trust_score}).
+        </p>
+        <label className="field">
+          Reason (10–2000 chars)
+          <textarea rows={5} value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Explain in plain English why you think the verdict is wrong. The LLM sees this and weighs it against the page during re-analysis."
+            disabled={busy} />
+        </label>
+        <label className="field">
+          Stake (wei, minimum 1)
+          <input type="number" min="1" step="1" value={stake}
+            onChange={(e) => setStake(e.target.value)} disabled={busy} />
+        </label>
+        <div className="modal-cta">
+          <button className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="primary" disabled={!canSubmit}
+            onClick={() => onSubmit({
+              analysisId: Number(target.analysis_id),
+              reason: reason.trim(),
+              stakeWei: BigInt(stake),
+            })}>
+            {busy ? "Re-analyzing…" : "Stake + re-analyze"}
+          </button>
+        </div>
+        {busy && (
+          <div className="consensus">
+            Validators are re-analyzing the same URL under an adversarial
+            prompt. Usually 20–90 seconds.
+            {txHash && (
+              <> <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer">Track appeal tx ↗</a></>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Row({ a, onSelect, onAppeal }) {
   const meta = VERDICT_META[a.verdict] || VERDICT_META.UNRESOLVABLE;
   const [open, setOpen] = useState(false);
   const flags = Array.isArray(a.red_flags) ? a.red_flags.filter(Boolean) : [];
@@ -817,7 +1026,14 @@ function Row({ a, onSelect }) {
         <div className="row-body">
           {a.summary && <p>{a.summary}</p>}
           {flags.length > 0 && <ul>{flags.map((f, i) => <li key={i}>{f}</li>)}</ul>}
-          <a href={a.url} target="_blank" rel="noreferrer">Open page ↗</a>
+          <div className="row-actions">
+            <a href={a.url} target="_blank" rel="noreferrer">Open page ↗</a>
+            {onAppeal && (
+              <button className="link-btn" onClick={(e) => { e.stopPropagation(); onAppeal(); }}>
+                Appeal this verdict →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </article>

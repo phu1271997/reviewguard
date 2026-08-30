@@ -8,9 +8,12 @@ reviews look. It returns a verdict, a 0–100 trust score, and concrete red flag
 all stored on-chain.
 
 - **Live app:** https://reviewguard-chi.vercel.app/
-- **Deployed contract (v0.2.0):** [`0x07c581dd42f4EEf985b32C4e62cc115dEF128585`](https://explorer-studio.genlayer.com/address/0x07c581dd42f4EEf985b32C4e62cc115dEF128585) on GenLayer **studionet** (status: Preview)
-- **Docs:** [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [CHANGELOG.md](./CHANGELOG.md) · [ADR-0001](./docs/ADR-0001-consensus-choice.md)
-- **Previous deploy (v0.1.0, retired):** `0x99e35870DBDDa556C5f11DF6542d6E31EA074655` — kept live for reference; the Vercel app now points at v0.2.0.
+- **Deployed contract (v0.3.0):** [`0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`](https://explorer-studio.genlayer.com/address/0xda89fE3e166A21C4879fA8479F530B3e2e724eAe) on GenLayer **studionet** (status: Preview)
+- **Docs:** [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [CHANGELOG.md](./CHANGELOG.md) · [ADR-0001](./docs/ADR-0001-consensus-choice.md) · [CONTRIBUTING.md](./CONTRIBUTING.md)
+- **Milestone history**:
+  - v0.3.0 — Phase 2 appeal / dispute flow — `0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`
+  - v0.2.0 — Phase 1 hardening (retired) — `0x07c581dd42f4EEf985b32C4e62cc115dEF128585`
+  - v0.1.0 — Explorer submission (retired) — `0x99e35870DBDDa556C5f11DF6542d6E31EA074655`
 - **Sample verdicts on-chain today:**
   `TRUSTWORTHY` — [Discord on the App Store](https://apps.apple.com/us/app/discord/id985746746) (trust 82) ·
   `SUSPICIOUS` — [Temu on the App Store](https://apps.apple.com/us/app/temu-shop-like-a-billionaire/id1641486558) (trust 35) ·
