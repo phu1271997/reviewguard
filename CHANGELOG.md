@@ -4,6 +4,64 @@ All notable changes to ReviewGuard are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with
 milestone tags aligned to the GenLayer Builder Program Milestone submissions.
 
+## [0.5.0] — 2026-09-08 — Phase 4: On-Chain Reputation Registry + Trust Leaderboard
+
+Bundle submitted as Phase 4 Milestone. Contract redeployed on studionet at
+`0x1aBBd65985FB802a5eDDb362193338dF0FF2F8cf` (previous: `0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`).
+
+### Feature — Persistent per-domain reputation (rubric Loai 3c reputation system)
+
+Phases 1–3 all produced **one-shot** judgements. Phase 4 turns every judgement
+into a lasting record: ReviewGuard now maintains an on-chain **reputation
+registry** keyed by domain, so repeated checks accumulate into a living trust
+directory instead of evaporating after each transaction.
+
+- **Every `analyze` and every `cross_verify` source now updates the registry.**
+  A new internal `_touch_domain()` (deterministic, runs in the write body after
+  consensus) folds each judgement into the domain's standing record: total
+  checks, cross-checks, verdict distribution (trustworthy / mixed / suspicious /
+  unresolvable), running sum of trust scores, divergent-cross-check count, and
+  last verdict + score.
+- **Derived reputation tier** recomputed at read time from the stored counters:
+  `TRUSTED` (avg ≥ 75), `MIXED` (55–74), `WATCH` (35–54), `FLAGGED` (< 35),
+  `UNRATED` (no scored checks). **Any DIVERGENT cross-check caps a domain at
+  `WATCH`** — platforms contradicting each other is a standing manipulation
+  signal, so a domain cannot be `TRUSTED` while its cross-platform checks
+  diverge. Tiers are derived (not stored) so the rule can evolve with no
+  storage migration.
+- **New storage struct** `DomainRep` (`@allow_storage @dataclass`) plus
+  `domains: TreeMap[str, DomainRep]`, a `domain_order: TreeMap[str, str]`
+  ordering map (string-keyed registry is enumerable for the leaderboard without
+  list storage), and a `domain_count: bigint`.
+- **Host normalization** (`_domain_of`): scheme, `www.`, port, path, query, and
+  userinfo are all stripped, so `https://www.Apps.Apple.com/us/...` and
+  `apps.apple.com` resolve to the same record. Reputation is tracked at the
+  platform level, so a US and a GB App Store storefront reinforce one domain.
+- **New views**: `get_domain(domain)` (normalized lookup, `{}` if none),
+  `get_domain_total()`, `list_domains()` (whole registry with derived tier +
+  average, for the leaderboard).
+
+### Contract API
+- `contract_version()` bumped to `"0.5.0"`.
+- Storage: added `domains`, `domain_order`, `domain_count`.
+
+### Frontend
+- **New "Registry" section**: a live reputation leaderboard (rank, domain, tier
+  badge, average score, check count, verdict-distribution bar, divergent-hit
+  count) with a domain filter and sort toggles (most checked / highest / lowest
+  trust).
+- **Reputation badge** on the analysis result card: the domain's standing tier,
+  average, and check count shown alongside the fresh verdict.
+- **Stats strip** adds a "Domains tracked" tile; new "Registry" nav anchor;
+  header live chip bumped to `v0.5.0`.
+
+### Tests
+- New `tests/test_reputation.py` (5 cases): zero-state invariants for the three
+  new views, `get_domain` returning `{}` for unknown hosts, input
+  normalization, and a slow end-to-end that runs a real `analyze` and asserts a
+  fully-formed `DomainRep` (tier / average / distribution) appears in both
+  `get_domain` and `list_domains`.
+
 ## [0.4.0] — 2026-09-08 — Phase 3: Multi-Source Cross-Verification Engine
 
 Bundle submitted as Phase 3 Milestone. Contract redeployed on studionet at

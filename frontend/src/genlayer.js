@@ -6,11 +6,11 @@
 import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-// Pinned latest deployment (Phase 3 / v0.4.0 on studionet). Used as the default
+// Pinned latest deployment (Phase 4 / v0.5.0 on studionet). Used as the default
 // so the app is correct even when VITE_CONTRACT_ADDRESS is unset. Set the env
 // var to point the frontend at a different deployment (e.g. your own).
 export const DEFAULT_CONTRACT_ADDRESS =
-  "0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F";
+  "0x1aBBd65985FB802a5eDDb362193338dF0FF2F8cf";
 export const CONTRACT_ADDRESS =
   import.meta.env.VITE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
 export const EXPLORER_BASE = "https://explorer-studio.genlayer.com";
@@ -157,6 +157,26 @@ export async function getReport(id) {
     args: [id],
   });
   return parseJSON(res, null);
+}
+
+// ── Phase 4 — reputation registry ───────────────────────────────────────────
+export async function listDomains() {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "list_domains",
+    args: [],
+  });
+  return parseJSON(res, []);
+}
+
+export async function getDomain(domain) {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "get_domain",
+    args: [domain],
+  });
+  const obj = parseJSON(res, {});
+  return obj && Object.keys(obj).length > 0 ? obj : null;
 }
 
 // urls: array of strings. Encoded as a single JSON-array string arg so calldata

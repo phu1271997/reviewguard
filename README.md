@@ -8,10 +8,11 @@ reviews look. It returns a verdict, a 0–100 trust score, and concrete red flag
 all stored on-chain.
 
 - **Live app:** https://reviewguard-chi.vercel.app/
-- **Deployed contract (v0.4.0):** [`0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`](https://explorer-studio.genlayer.com/address/0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F) on GenLayer **studionet** (status: Preview)
+- **Deployed contract (v0.5.0):** [`0x1aBBd65985FB802a5eDDb362193338dF0FF2F8cf`](https://explorer-studio.genlayer.com/address/0x1aBBd65985FB802a5eDDb362193338dF0FF2F8cf) on GenLayer **studionet** (status: Preview)
 - **Docs:** [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [CHANGELOG.md](./CHANGELOG.md) · [ADR-0001](./docs/ADR-0001-consensus-choice.md) · [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **Milestone history**:
-  - v0.4.0 — Phase 3 multi-source cross-verification — `0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`
+  - v0.5.0 — Phase 4 reputation registry + trust leaderboard — `0x1aBBd65985FB802a5eDDb362193338dF0FF2F8cf`
+  - v0.4.0 — Phase 3 multi-source cross-verification (retired) — `0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`
   - v0.3.0 — Phase 2 appeal / dispute flow (retired) — `0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`
   - v0.2.0 — Phase 1 hardening (retired) — `0x07c581dd42f4EEf985b32C4e62cc115dEF128585`
   - v0.1.0 — Explorer submission (retired) — `0x99e35870DBDDa556C5f11DF6542d6E31EA074655`
@@ -65,6 +66,7 @@ reviewguard/
 ├── contracts/
 │   ├── ReviewGuard.py         # the Intelligent Contract (heart of the project)
 │   │                          #   analyze() · cross_verify() · file_appeal()
+│   │                          #   + per-domain reputation registry
 │   └── storage_test.py        # minimal sanity contract — deploy FIRST
 ├── frontend/                  # genlayer-js + React (Vite) app
 │   ├── src/genlayer.js        # contract client wrapper
@@ -140,10 +142,16 @@ to studionet (same network the live app targets). Tests deploy a fresh
 
 ```bash
 python3 -m pip install genlayer-test
-gltest -m "not slow"     # 8 fast tests (~3 min) — deploys once, hits view methods + URL validation
-gltest                   # +3 slow tests (~5 min extra) — real LLM + web.render across dead URLs,
-                         #   non-review pages, and a happy-path App Store review
+gltest -m "not slow"     # fast tests — deploys once, hits every view method + all input
+                         #   validation across analyze / appeal / cross_verify / reputation
+gltest                   # + slow tests — real LLM + web.render: dead URLs, non-review pages,
+                         #   a happy-path App Store review, a live 2-source cross-report, and a
+                         #   reputation-registry population check
 ```
+
+Test files: `test_deploy_and_views.py`, `test_url_validation.py`,
+`test_analyze_edge_cases.py`, `test_security_hardening.py`, `test_appeal.py`
+(Phase 2), `test_cross_verify.py` (Phase 3), `test_reputation.py` (Phase 4).
 
 Fast tests cover: deploy succeeds and initial state is empty; view methods
 (`get_total`, `list_analyses`, `find_by_url`, `get_analysis`) shapes and
@@ -175,7 +183,8 @@ retry each call up to 3× with backoff via `retry_call` in `tests/conftest.py`.
 | `get_total()` | view | number of analyses |
 | `get_report(id)` / `list_reports()` / `get_report_total()` | view | **Phase 3** cross-verification reports |
 | `get_appeal(id)` / `list_appeals()` / `appeals_for(id)` | view | **Phase 2** appeals |
-| `contract_version()` | view | app-level version string (`0.4.0`) |
+| `get_domain(domain)` / `list_domains()` / `get_domain_total()` | view | **Phase 4** per-domain reputation registry + leaderboard |
+| `contract_version()` | view | app-level version string (`0.5.0`) |
 
 **Cross-report JSON shape (Phase 3):**
 ```json
@@ -190,6 +199,22 @@ retry each call up to 3× with backoff via `retry_call` in `tests/conftest.py`.
   "summary": "…",
   "source_count": 2,
   "requested_count": 2
+}
+```
+
+**Domain reputation JSON shape (Phase 4):**
+```json
+{
+  "domain": "apps.apple.com",
+  "checks": 3,
+  "cross_checks": 2,
+  "total_checks": 5,
+  "avg_score": 54,
+  "score_samples": 4,
+  "trustworthy": 1, "mixed": 2, "suspicious": 1, "unresolvable": 1,
+  "divergent_hits": 0,
+  "last_verdict": "MIXED", "last_score": 52,
+  "tier": "TRUSTED | MIXED | WATCH | FLAGGED | UNRATED"
 }
 ```
 

@@ -38,8 +38,9 @@ from dataclasses import dataclass
 #   0.1.0 -- initial Explorer submission
 #   0.2.0 -- Phase 1: security hardening + tighter equivalence + multi-perspective prompt
 #   0.3.0 -- Phase 2: appeal / dispute flow
-#   0.4.0 -- Phase 3: multi-source cross-verification engine (this release)
-CONTRACT_VERSION = "0.4.0"
+#   0.4.0 -- Phase 3: multi-source cross-verification engine
+#   0.5.0 -- Phase 4: on-chain reputation registry + trust leaderboard (this release)
+CONTRACT_VERSION = "0.5.0"
 
 # Verdict vocabulary
 VERDICT_TRUSTWORTHY = "TRUSTWORTHY"     # reviews look genuine
@@ -130,6 +131,30 @@ CROSS_PRINCIPLE = (
 )
 
 
+# ---- On-chain reputation registry (Phase 4) ----
+# Every analyze() and cross_verify() is a one-shot judgement. Phase 4 turns
+# those one-shot calls into a PERSISTENT, accumulating trust record per domain:
+# how many times a domain has been checked, its verdict distribution, its
+# running average trust score, how often cross-platform checks on it DIVERGED,
+# and a derived reputation tier. The registry is deterministic (updated in the
+# write method body AFTER consensus), and every tier is recomputed from the
+# stored counters at read time so the rule can evolve without a migration.
+#
+# Reputation tiers (derived, not stored) from the running average trust score
+# over scored (non-UNRESOLVABLE) checks:
+REP_TIER_TRUSTED = "TRUSTED"     # avg >= 75
+REP_TIER_MIXED = "MIXED"         # 55 <= avg < 75
+REP_TIER_WATCH = "WATCH"         # 35 <= avg < 55
+REP_TIER_FLAGGED = "FLAGGED"     # avg < 35
+REP_TIER_UNRATED = "UNRATED"     # no scored checks yet
+REP_THRESH_TRUSTED = 75
+REP_THRESH_MIXED = 55
+REP_THRESH_WATCH = 35
+# A domain with any DIVERGENT cross-check can be no better than WATCH: the
+# platforms contradicting each other is a standing manipulation signal.
+REP_DIVERGENT_CAP_TIER = REP_TIER_WATCH
+
+
 @allow_storage
 @dataclass
 class Analysis:
@@ -181,11 +206,31 @@ class CrossReport:
     created: bool
 
 
+@allow_storage
+@dataclass
+class DomainRep:
+    # Phase 4 -- accumulating reputation for one domain (host).
+    domain: str
+    checks: bigint                   # analyze() hits on this domain
+    cross_checks: bigint             # cross_verify() sources on this domain
+    sum_score: bigint                # sum of trust scores over scored checks
+    score_samples: bigint            # count of scored (non-UNRESOLVABLE) checks
+    trustworthy: bigint
+    mixed: bigint
+    suspicious: bigint
+    unresolvable: bigint
+    divergent_hits: bigint           # times a cross-check on this domain diverged
+    last_verdict: str
+    last_score: bigint
+    created: bool
+
+
 class Contract(gl.Contract):
     owner: Address
     next_id: bigint
     next_appeal_id: bigint
     next_report_id: bigint
+    domain_count: bigint
     # TreeMap keys MUST be str (R19). We key analyses by str(analysis_id).
     analyses: TreeMap[str, Analysis]
     # cache: url -> analysis_id (str), so repeat lookups are cheap and free
@@ -194,6 +239,11 @@ class Contract(gl.Contract):
     appeals: TreeMap[str, Appeal]
     # cross-verification reports keyed by str(report_id).
     reports: TreeMap[str, CrossReport]
+    # Phase 4 reputation registry: domain -> DomainRep, plus a str(index)->domain
+    # ordering map so the (string-keyed) registry can be enumerated for the
+    # leaderboard without list storage.
+    domains: TreeMap[str, DomainRep]
+    domain_order: TreeMap[str, str]
 
     def __init__(self):
         # Scalars only; never touch TreeMap fields in __init__ (Rule 2).
@@ -201,6 +251,66 @@ class Contract(gl.Contract):
         self.next_id = bigint(0)
         self.next_appeal_id = bigint(0)
         self.next_report_id = bigint(0)
+        self.domain_count = bigint(0)
+
+    # -------------------------------------------------------------------------
+    # PHASE 4 -- internal reputation update (deterministic; runs in the write
+    # body AFTER consensus, so it may touch self). NOT a public method.
+    # -------------------------------------------------------------------------
+    def _touch_domain(self, domain: str, verdict: str, score: int,
+                      is_cross: bool, divergent: bool) -> None:
+        if domain is None or len(domain) == 0:
+            return
+        key = domain
+        if key in self.domains:
+            rep = self.domains[key]
+        else:
+            # First time we see this domain: register it and give it an order
+            # index so the leaderboard can enumerate it.
+            idx = int(self.domain_count)
+            self.domain_order[str(idx)] = key
+            self.domain_count = bigint(idx + 1)
+            rep = DomainRep(
+                domain=key,
+                checks=bigint(0),
+                cross_checks=bigint(0),
+                sum_score=bigint(0),
+                score_samples=bigint(0),
+                trustworthy=bigint(0),
+                mixed=bigint(0),
+                suspicious=bigint(0),
+                unresolvable=bigint(0),
+                divergent_hits=bigint(0),
+                last_verdict="",
+                last_score=bigint(0),
+                created=True,
+            )
+
+        if is_cross:
+            rep.cross_checks = bigint(int(rep.cross_checks) + 1)
+        else:
+            rep.checks = bigint(int(rep.checks) + 1)
+
+        if verdict == VERDICT_TRUSTWORTHY:
+            rep.trustworthy = bigint(int(rep.trustworthy) + 1)
+        elif verdict == VERDICT_MIXED:
+            rep.mixed = bigint(int(rep.mixed) + 1)
+        elif verdict == VERDICT_SUSPICIOUS:
+            rep.suspicious = bigint(int(rep.suspicious) + 1)
+        else:
+            rep.unresolvable = bigint(int(rep.unresolvable) + 1)
+
+        # Only scored (non-UNRESOLVABLE) checks feed the running average.
+        if verdict != VERDICT_UNRESOLVABLE:
+            rep.sum_score = bigint(int(rep.sum_score) + int(score))
+            rep.score_samples = bigint(int(rep.score_samples) + 1)
+
+        if divergent:
+            rep.divergent_hits = bigint(int(rep.divergent_hits) + 1)
+
+        rep.last_verdict = verdict
+        rep.last_score = bigint(int(score))
+        self.domains[key] = rep
 
     # -------------------------------------------------------------------------
     # WRITE: analyze a review page. This is the core nondet method.
@@ -287,6 +397,8 @@ class Contract(gl.Contract):
         self.analyses[str(aid)] = record
         self.url_index[target_url] = bigint(aid)
         self.next_id = bigint(aid + 1)
+        # Phase 4: fold this judgement into the domain's standing reputation.
+        self._touch_domain(_domain_of(target_url), verdict, score, False, False)
         return aid
 
     # -------------------------------------------------------------------------
@@ -618,6 +730,17 @@ class Contract(gl.Contract):
         )
         self.reports[str(rid)] = record
         self.next_report_id = bigint(rid + 1)
+        # Phase 4: fold each source's per-domain verdict into the registry. A
+        # DIVERGENT cross-report marks every domain it touched as divergent.
+        is_divergent = (consistency == CONSISTENCY_DIVERGENT)
+        if isinstance(per_source_list, list):
+            for ps in per_source_list:
+                if not isinstance(ps, dict):
+                    continue
+                ps_domain = _domain_of(str(ps.get("url", "")))
+                ps_verdict = _clean_verdict(ps.get("verdict"))
+                ps_score = _clamp_score(ps.get("trust_score", 0))
+                self._touch_domain(ps_domain, ps_verdict, ps_score, True, is_divergent)
         return rid
 
     @gl.public.view
@@ -640,6 +763,37 @@ class Contract(gl.Contract):
             key = str(i)
             if key in self.reports:
                 out.append(_report_to_dict(self.reports[key]))
+            i += 1
+        return json.dumps(out)
+
+    # -------------------------------------------------------------------------
+    # PHASE 4 -- REPUTATION REGISTRY VIEWS
+    # -------------------------------------------------------------------------
+    @gl.public.view
+    def get_domain(self, domain: str) -> str:
+        """Reputation for a domain (matched after normalization), or {} if none."""
+        key = _domain_of(domain)
+        if key is None or key not in self.domains:
+            return json.dumps({})
+        return json.dumps(_domain_to_dict(self.domains[key]))
+
+    @gl.public.view
+    def get_domain_total(self) -> int:
+        return int(self.domain_count)
+
+    @gl.public.view
+    def list_domains(self) -> str:
+        """The whole registry as a JSON array, each entry with its derived tier
+        and average score. The frontend sorts this into a leaderboard."""
+        out = []
+        i = 0
+        total = int(self.domain_count)
+        while i < total:
+            okey = str(i)
+            if okey in self.domain_order:
+                dkey = self.domain_order[okey]
+                if dkey in self.domains:
+                    out.append(_domain_to_dict(self.domains[dkey]))
             i += 1
         return json.dumps(out)
 
@@ -1045,6 +1199,76 @@ def _appeal_to_dict(a: Appeal) -> dict:
         "new_red_flags": a.new_red_flags.split("\n") if a.new_red_flags else [],
         "status": a.status,
         "created": bool(a.created),
+    }
+
+
+def _domain_of(url: str) -> str:
+    """Extract a normalized host from a URL, for reputation keying.
+
+    'https://www.Apps.Apple.com:443/us/app/x' -> 'apps.apple.com'. Returns ""
+    when no host can be extracted. Pure function (no self, no nondet).
+    """
+    if url is None:
+        return ""
+    s = str(url).strip().lower()
+    if s.startswith("https://"):
+        s = s[8:]
+    elif s.startswith("http://"):
+        s = s[7:]
+    # host is everything up to the first '/', '?' or '#'
+    for sep in ("/", "?", "#"):
+        idx = s.find(sep)
+        if idx != -1:
+            s = s[:idx]
+    # strip userinfo and port
+    at = s.rfind("@")
+    if at != -1:
+        s = s[at + 1:]
+    colon = s.find(":")
+    if colon != -1:
+        s = s[:colon]
+    if s.startswith("www."):
+        s = s[4:]
+    return s.strip()
+
+
+def _rep_tier(sum_score: int, samples: int, divergent_hits: int) -> str:
+    if samples <= 0:
+        return REP_TIER_UNRATED
+    avg = sum_score // samples
+    if avg >= REP_THRESH_TRUSTED:
+        tier = REP_TIER_TRUSTED
+    elif avg >= REP_THRESH_MIXED:
+        tier = REP_TIER_MIXED
+    elif avg >= REP_THRESH_WATCH:
+        tier = REP_TIER_WATCH
+    else:
+        tier = REP_TIER_FLAGGED
+    # Any cross-platform divergence caps the tier at WATCH.
+    if divergent_hits > 0 and tier in (REP_TIER_TRUSTED, REP_TIER_MIXED):
+        tier = REP_DIVERGENT_CAP_TIER
+    return tier
+
+
+def _domain_to_dict(d: DomainRep) -> dict:
+    samples = int(d.score_samples)
+    total_score = int(d.sum_score)
+    avg = (total_score // samples) if samples > 0 else None
+    return {
+        "domain": d.domain,
+        "checks": int(d.checks),
+        "cross_checks": int(d.cross_checks),
+        "total_checks": int(d.checks) + int(d.cross_checks),
+        "avg_score": avg,
+        "score_samples": samples,
+        "trustworthy": int(d.trustworthy),
+        "mixed": int(d.mixed),
+        "suspicious": int(d.suspicious),
+        "unresolvable": int(d.unresolvable),
+        "divergent_hits": int(d.divergent_hits),
+        "last_verdict": d.last_verdict,
+        "last_score": int(d.last_score),
+        "tier": _rep_tier(total_score, samples, int(d.divergent_hits)),
     }
 
 

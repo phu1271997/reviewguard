@@ -11,6 +11,8 @@ import {
   listAnalyses,
   listAppeals,
   listReports,
+  listDomains,
+  getDomain,
   crossVerify,
   fileAppeal,
   analyze,
@@ -20,13 +22,40 @@ import {
 } from "./genlayer.js";
 import "./styles.css";
 
-const APP_VERSION = "v0.4.0";
+const APP_VERSION = "v0.5.0";
 
 const CONSISTENCY_META = {
   CONSISTENT: { color: "var(--good)", label: "Consistent across platforms" },
   DIVERGENT: { color: "var(--bad)", label: "Divergent across platforms" },
   INSUFFICIENT: { color: "var(--muted)", label: "Insufficient sources" },
 };
+
+const TIER_META = {
+  TRUSTED: { color: "var(--good)", label: "Trusted" },
+  MIXED: { color: "var(--warn)", label: "Mixed" },
+  WATCH: { color: "var(--warn)", label: "Watch" },
+  FLAGGED: { color: "var(--bad)", label: "Flagged" },
+  UNRATED: { color: "var(--muted)", label: "Unrated" },
+};
+
+// Client mirror of the contract's _domain_of() — for showing a domain's
+// standing reputation badge next to a result without another round-trip.
+function domainOf(url) {
+  if (!url) return "";
+  let s = String(url).trim().toLowerCase();
+  if (s.startsWith("https://")) s = s.slice(8);
+  else if (s.startsWith("http://")) s = s.slice(7);
+  for (const sep of ["/", "?", "#"]) {
+    const i = s.indexOf(sep);
+    if (i !== -1) s = s.slice(0, i);
+  }
+  const at = s.lastIndexOf("@");
+  if (at !== -1) s = s.slice(at + 1);
+  const c = s.indexOf(":");
+  if (c !== -1) s = s.slice(0, c);
+  if (s.startsWith("www.")) s = s.slice(4);
+  return s.trim();
+}
 
 const VERDICT_META = {
   TRUSTWORTHY: { color: "var(--good)", label: "Trustworthy" },
@@ -48,6 +77,7 @@ const NAV_ITEMS = [
   { id: "verdicts", label: "Verdicts" },
   { id: "how-it-works", label: "How it works" },
   { id: "signals", label: "Signals" },
+  { id: "registry", label: "Registry" },
   { id: "analyses", label: "History" },
   { id: "reports", label: "Reports" },
   { id: "appeals", label: "Appeals" },
@@ -81,6 +111,7 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [appeals, setAppeals] = useState([]);
   const [reports, setReports] = useState([]);
+  const [domains, setDomains] = useState([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,15 +131,17 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError("");
-      const [list, aList, rList] = await Promise.all([
+      const [list, aList, rList, dList] = await Promise.all([
         listAnalyses().catch(() => []),
         listAppeals().catch(() => []),
         listReports().catch(() => []),
+        listDomains().catch(() => []),
       ]);
       const arr = Array.isArray(list) ? list : [];
       setItems(arr);
       setAppeals(Array.isArray(aList) ? aList : []);
       setReports(Array.isArray(rList) ? rList : []);
+      setDomains(Array.isArray(dList) ? dList : []);
       if (arr.length > 0) setLatest((prev) => prev || arr[arr.length - 1]);
     } catch (e) {
       setError("Could not read state: " + (e?.message || e));
@@ -132,8 +165,9 @@ export default function App() {
     let divergent = 0;
     for (const r of reports) if (r.consistency === "DIVERGENT") divergent++;
     return { total, bucket, avg, appealTotal: appeals.length,
-             reportTotal: reports.length, divergent };
-  }, [items, appeals, reports]);
+             reportTotal: reports.length, divergent,
+             domainTotal: domains.length };
+  }, [items, appeals, reports, domains]);
 
   async function runAnalyze(target) {
     if (!target) return;
@@ -272,6 +306,7 @@ export default function App() {
         {latest && (
           <FeatureCard
             a={latest}
+            rep={domains.find((d) => d.domain === domainOf(latest.url)) || null}
             onAppeal={() => setAppealTarget({
               analysis_id: latest.analysis_id,
               url: latest.url,
@@ -322,6 +357,8 @@ export default function App() {
             ))
           )}
         </section>
+
+        <RegistrySection domains={domains} loading={loading} />
 
         <ReportsSection reports={reports} loading={loading}
           onSelect={(r) => { setLatestReport(r); document.getElementById("cross")?.scrollIntoView({ behavior: "smooth" }); }} />
@@ -424,7 +461,7 @@ function StatsStrip({ stats }) {
     { label: "Trustworthy", value: stats.bucket.TRUSTWORTHY, cls: "good" },
     { label: "Suspicious", value: stats.bucket.SUSPICIOUS, cls: "bad" },
     { label: "Cross-reports", value: stats.reportTotal, sub: "Phase 3 multi-source" },
-    { label: "Divergent", value: stats.divergent, cls: "bad", sub: "platforms disagreed" },
+    { label: "Domains tracked", value: stats.domainTotal, sub: "Phase 4 registry" },
     { label: "Appeals", value: stats.appealTotal, sub: "Phase 2 flow" },
     { label: "Avg trust score", value: stats.avg ?? "—", sub: "verdicts ≠ Unresolvable" },
   ];
@@ -908,7 +945,20 @@ function Gauge({ score, color }) {
   );
 }
 
-function FeatureCard({ a, onAppeal }) {
+function TierBadge({ rep, small }) {
+  if (!rep || !rep.tier) return null;
+  const tm = TIER_META[rep.tier] || TIER_META.UNRATED;
+  const total = rep.total_checks ?? ((rep.checks || 0) + (rep.cross_checks || 0));
+  return (
+    <span className={"tier-badge" + (small ? " sm" : "")} style={{ "--tc": tm.color }}
+      title={`${rep.domain}: ${total} checks on-chain, avg ${rep.avg_score ?? "—"}`}>
+      <span className="tier-dot" /> {tm.label}
+      {rep.avg_score != null && <span className="tier-avg"> · {rep.avg_score}</span>}
+    </span>
+  );
+}
+
+function FeatureCard({ a, onAppeal, rep }) {
   const meta = VERDICT_META[a.verdict] || VERDICT_META.UNRESOLVABLE;
   const flags = Array.isArray(a.red_flags) ? a.red_flags.filter(Boolean) : [];
   return (
@@ -916,8 +966,18 @@ function FeatureCard({ a, onAppeal }) {
       <div className="feature-top">
         <Gauge score={Number(a.trust_score) || 0} color={meta.color} />
         <div className="feature-head">
-          <span className="verdict-pill" style={{ background: meta.color }}>{meta.label}</span>
+          <div className="cross-badges">
+            <span className="verdict-pill" style={{ background: meta.color }}>{meta.label}</span>
+            {rep && <TierBadge rep={rep} />}
+          </div>
           <a className="feature-url" href={a.url} target="_blank" rel="noreferrer">{a.url} ↗</a>
+          {rep && (
+            <div className="cross-meta">
+              Domain <code>{rep.domain}</code> reputation: {rep.total_checks} on-chain checks ·{" "}
+              {rep.trustworthy} trustworthy / {rep.suspicious} suspicious
+              {rep.divergent_hits > 0 && <> · {rep.divergent_hits} divergent</>}
+            </div>
+          )}
           {a.summary && <p className="feature-summary">{a.summary}</p>}
           {onAppeal && (
             <button className="appeal-btn" onClick={onAppeal}>
@@ -1162,6 +1222,115 @@ function ReportRow({ r, onSelect }) {
         </div>
       )}
     </article>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PHASE 4 — REPUTATION REGISTRY / LEADERBOARD
+// ────────────────────────────────────────────────────────────────────────────
+function RegistrySection({ domains, loading }) {
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState("checks"); // "checks" | "best" | "worst"
+
+  const rows = useMemo(() => {
+    let list = Array.isArray(domains) ? domains.slice() : [];
+    const needle = q.trim().toLowerCase();
+    if (needle) list = list.filter((d) => (d.domain || "").includes(needle));
+    list.sort((a, b) => {
+      if (sort === "checks") return (b.total_checks || 0) - (a.total_checks || 0);
+      const av = a.avg_score == null ? -1 : a.avg_score;
+      const bv = b.avg_score == null ? -1 : b.avg_score;
+      return sort === "best" ? bv - av : av - bv;
+    });
+    return list;
+  }, [domains, q, sort]);
+
+  return (
+    <section className="explain" id="registry">
+      <div className="explain-eyebrow">Phase 4 · Reputation registry</div>
+      <h2 className="explain-title">A trust record that grows with every check</h2>
+      <p className="explain-lede">
+        Every <code>analyze</code> and every <code>cross_verify</code> source is
+        folded into a persistent, on-chain reputation for its <em>domain</em>.
+        The contract keeps each domain's verdict distribution, running average
+        trust score, and how often its cross-platform checks <em>diverged</em>,
+        then derives a reputation tier at read time. One-off checks become a
+        living directory — a domain that keeps scoring <strong>Suspicious</strong>
+        earns a standing <strong>Flagged</strong> tier that anyone can query for free.
+      </p>
+
+      <div className="registry-controls">
+        <input className="registry-search" placeholder="Filter by domain (e.g. apps.apple.com)"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="registry-sort">
+          {[["checks", "Most checked"], ["best", "Highest trust"], ["worst", "Lowest trust"]].map(([k, label]) => (
+            <button key={k} className={"chip-toggle" + (sort === k ? " on" : "")}
+              onClick={() => setSort(k)}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="empty">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="empty">
+          {domains.length === 0
+            ? "No domains tracked yet. Run an analysis or a cross-verification to seed the registry."
+            : "No domains match that filter."}
+        </div>
+      ) : (
+        <div className="registry-wrap">
+          <table className="registry">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Domain</th>
+                <th>Tier</th>
+                <th>Avg</th>
+                <th>Checks</th>
+                <th>Distribution</th>
+                <th>Divergent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((d, i) => <RegistryRow key={d.domain} d={d} rank={i + 1} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RegistryRow({ d, rank }) {
+  const tm = TIER_META[d.tier] || TIER_META.UNRATED;
+  const dist = [
+    { n: d.trustworthy, c: "var(--good)" },
+    { n: d.mixed, c: "var(--warn)" },
+    { n: d.suspicious, c: "var(--bad)" },
+    { n: d.unresolvable, c: "var(--muted)" },
+  ];
+  const distTotal = dist.reduce((s, x) => s + (x.n || 0), 0) || 1;
+  return (
+    <tr>
+      <td className="reg-rank">{rank}</td>
+      <td className="reg-domain"><code>{d.domain}</code></td>
+      <td><TierBadge rep={d} small /></td>
+      <td className="reg-avg">{d.avg_score == null ? "—" : d.avg_score}</td>
+      <td className="reg-checks">{d.total_checks}
+        {d.cross_checks > 0 && <span className="reg-sub"> ({d.cross_checks} cross)</span>}
+      </td>
+      <td className="reg-dist">
+        <span className="dist-bar">
+          {dist.map((x, i) => x.n > 0 && (
+            <span key={i} style={{ background: x.c, flexGrow: x.n }} title={`${x.n}`} />
+          ))}
+        </span>
+      </td>
+      <td className="reg-div" style={{ color: d.divergent_hits > 0 ? "var(--bad)" : "var(--muted)" }}>
+        {d.divergent_hits}
+      </td>
+    </tr>
   );
 }
 
