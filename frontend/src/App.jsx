@@ -10,6 +10,8 @@ import {
   getAccount,
   listAnalyses,
   listAppeals,
+  listReports,
+  crossVerify,
   fileAppeal,
   analyze,
   findByUrl,
@@ -17,6 +19,14 @@ import {
   explorerTxUrl,
 } from "./genlayer.js";
 import "./styles.css";
+
+const APP_VERSION = "v0.4.0";
+
+const CONSISTENCY_META = {
+  CONSISTENT: { color: "var(--good)", label: "Consistent across platforms" },
+  DIVERGENT: { color: "var(--bad)", label: "Divergent across platforms" },
+  INSUFFICIENT: { color: "var(--muted)", label: "Insufficient sources" },
+};
 
 const VERDICT_META = {
   TRUSTWORTHY: { color: "var(--good)", label: "Trustworthy" },
@@ -33,15 +43,27 @@ const SAMPLES = [
 
 const NAV_ITEMS = [
   { id: "try", label: "Try it" },
+  { id: "cross", label: "Cross-verify" },
   { id: "problem", label: "Problem" },
   { id: "verdicts", label: "Verdicts" },
   { id: "how-it-works", label: "How it works" },
   { id: "signals", label: "Signals" },
-  { id: "cases", label: "Use cases" },
   { id: "analyses", label: "History" },
+  { id: "reports", label: "Reports" },
   { id: "appeals", label: "Appeals" },
-  { id: "compare", label: "Compare" },
   { id: "faq", label: "FAQ" },
+];
+
+// One-click cross-verification demo: the same product across several platforms.
+const CROSS_SAMPLES = [
+  {
+    label: "Discord across 3 platforms",
+    urls: [
+      "https://apps.apple.com/us/app/discord/id985746746",
+      "https://en.wikipedia.org/wiki/Discord_(software)",
+      "https://discord.com/",
+    ],
+  },
 ];
 
 const APPEAL_STATUS_META = {
@@ -58,12 +80,17 @@ function short(addr) {
 export default function App() {
   const [items, setItems] = useState([]);
   const [appeals, setAppeals] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [crossBusy, setCrossBusy] = useState(false);
   const [error, setError] = useState("");
+  const [crossError, setCrossError] = useState("");
   const [latest, setLatest] = useState(null);
+  const [latestReport, setLatestReport] = useState(null);
   const [txHash, setTxHash] = useState("");
+  const [crossTxHash, setCrossTxHash] = useState("");
   const [appealTarget, setAppealTarget] = useState(null); // {analysis_id, url, verdict}
 
   const me = (() => {
@@ -73,13 +100,15 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError("");
-      const [list, aList] = await Promise.all([
+      const [list, aList, rList] = await Promise.all([
         listAnalyses().catch(() => []),
         listAppeals().catch(() => []),
+        listReports().catch(() => []),
       ]);
       const arr = Array.isArray(list) ? list : [];
       setItems(arr);
       setAppeals(Array.isArray(aList) ? aList : []);
+      setReports(Array.isArray(rList) ? rList : []);
       if (arr.length > 0) setLatest((prev) => prev || arr[arr.length - 1]);
     } catch (e) {
       setError("Could not read state: " + (e?.message || e));
@@ -100,8 +129,11 @@ export default function App() {
       if (v !== "UNRESOLVABLE") { sumScore += Number(a.trust_score) || 0; scoredCount++; }
     }
     const avg = scoredCount > 0 ? Math.round(sumScore / scoredCount) : null;
-    return { total, bucket, avg, appealTotal: appeals.length };
-  }, [items, appeals]);
+    let divergent = 0;
+    for (const r of reports) if (r.consistency === "DIVERGENT") divergent++;
+    return { total, bucket, avg, appealTotal: appeals.length,
+             reportTotal: reports.length, divergent };
+  }, [items, appeals, reports]);
 
   async function runAnalyze(target) {
     if (!target) return;
@@ -139,6 +171,37 @@ export default function App() {
       setError("Appeal failed: " + (e?.message || e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runCrossVerify(rawUrls) {
+    const urls = (rawUrls || [])
+      .map((u) => (u || "").trim())
+      .filter((u) => u.length > 0);
+    const unique = [...new Set(urls)];
+    if (unique.length < 2) {
+      setCrossError("Enter at least two different review-page URLs (same product, different platforms).");
+      return;
+    }
+    if (unique.some((u) => !/^https?:\/\//i.test(u))) {
+      setCrossError("Every URL must start with http:// or https://");
+      return;
+    }
+    if (unique.length > 5) {
+      setCrossError("At most five sources per cross-verification.");
+      return;
+    }
+    setCrossError(""); setCrossBusy(true); setLatestReport(null); setCrossTxHash("");
+    try {
+      await crossVerify(unique, (h) => setCrossTxHash(h));
+      const rList = await listReports().catch(() => []);
+      const arr = Array.isArray(rList) ? rList : [];
+      setReports(arr);
+      if (arr.length > 0) setLatestReport(arr[arr.length - 1]);
+    } catch (e) {
+      setCrossError("Cross-verification failed: " + (e?.message || e));
+    } finally {
+      setCrossBusy(false);
     }
   }
 
@@ -218,6 +281,14 @@ export default function App() {
           />
         )}
 
+        <CrossVerifySection
+          busy={crossBusy}
+          error={crossError}
+          txHash={crossTxHash}
+          latestReport={latestReport}
+          onRun={runCrossVerify}
+        />
+
         <ProblemSection />
         <VerdictSpecSection />
         <HowItWorksSection />
@@ -251,6 +322,9 @@ export default function App() {
             ))
           )}
         </section>
+
+        <ReportsSection reports={reports} loading={loading}
+          onSelect={(r) => { setLatestReport(r); document.getElementById("cross")?.scrollIntoView({ behavior: "smooth" }); }} />
 
         <AppealsSection appeals={appeals} items={items} onOpenAppeal={(a) => setAppealTarget({
           analysis_id: a.analysis_id, url: a.url, verdict: a.verdict, trust_score: a.trust_score,
@@ -326,7 +400,7 @@ function Hero({ me, stats }) {
         </div>
         <div className="chip-row">
           <span className="chip chip-live">
-            <span className="live-dot" /> studionet · live · v0.3.0
+            <span className="live-dot" /> studionet · live · {APP_VERSION}
           </span>
           <a className="chip" href={explorerAddressUrl(CONTRACT_ADDRESS)}
              target="_blank" rel="noreferrer">
@@ -348,9 +422,9 @@ function StatsStrip({ stats }) {
   const tiles = [
     { label: "Analyses", value: stats.total, sub: "since deploy" },
     { label: "Trustworthy", value: stats.bucket.TRUSTWORTHY, cls: "good" },
-    { label: "Mixed", value: stats.bucket.MIXED, cls: "warn" },
     { label: "Suspicious", value: stats.bucket.SUSPICIOUS, cls: "bad" },
-    { label: "Unresolvable", value: stats.bucket.UNRESOLVABLE, sub: "not a review page" },
+    { label: "Cross-reports", value: stats.reportTotal, sub: "Phase 3 multi-source" },
+    { label: "Divergent", value: stats.divergent, cls: "bad", sub: "platforms disagreed" },
     { label: "Appeals", value: stats.appealTotal, sub: "Phase 2 flow" },
     { label: "Avg trust score", value: stats.avg ?? "—", sub: "verdicts ≠ Unresolvable" },
   ];
@@ -859,6 +933,235 @@ function FeatureCard({ a, onAppeal }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PHASE 3 — CROSS-VERIFICATION SECTION + REPORT CARD + REPORTS LIST
+// ────────────────────────────────────────────────────────────────────────────
+function CrossVerifySection({ busy, error, txHash, latestReport, onRun }) {
+  const [urls, setUrls] = useState(["", "", ""]);
+
+  function setAt(i, v) {
+    setUrls((prev) => prev.map((u, idx) => (idx === i ? v : u)));
+  }
+  function addField() {
+    setUrls((prev) => (prev.length >= 5 ? prev : [...prev, ""]));
+  }
+  function removeField(i) {
+    setUrls((prev) => (prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i)));
+  }
+  function loadSample(s) {
+    const padded = [...s.urls];
+    while (padded.length < 3) padded.push("");
+    setUrls(padded.slice(0, 5));
+  }
+
+  return (
+    <section className="panel cross-panel" id="cross">
+      <div className="panel-head">
+        <div className="panel-eyebrow">Phase 3 · Cross-verification</div>
+        <h2 className="panel-title">Check one product across several platforms at once</h2>
+      </div>
+      <p className="cross-lede">
+        A single review page can be gamed in isolation — flood <em>one</em>
+        marketplace with 5-star fakes while the product looks mediocre
+        everywhere else. <strong>cross_verify</strong> reads 2–5 review pages for
+        the <em>same</em> product live on-chain, grades each one, and judges
+        whether the platforms <em>agree</em>. Disagreement between platforms is
+        itself a manipulation signal, and it pulls the overall trust score down.
+        All of it runs under the same validator consensus.
+      </p>
+
+      <div className="cross-fields">
+        {urls.map((u, i) => (
+          <div className="cross-field-row" key={i}>
+            <span className="cross-field-idx">{i + 1}</span>
+            <input
+              placeholder={i === 0
+                ? "https://apps.apple.com/us/app/discord/id985746746"
+                : "https://another-platform.com/same-product"}
+              value={u}
+              onChange={(e) => setAt(i, e.target.value)}
+              disabled={busy}
+            />
+            {urls.length > 2 && (
+              <button className="cross-remove" onClick={() => removeField(i)}
+                disabled={busy} title="Remove this source">×</button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="cross-actions">
+        <button className="ghost" onClick={addField} disabled={busy || urls.length >= 5}>
+          + Add source
+        </button>
+        {CROSS_SAMPLES.map((s) => (
+          <button key={s.label} className="sample" disabled={busy}
+            onClick={() => loadSample(s)} title={s.urls.join("\n")}>
+            {s.label}
+          </button>
+        ))}
+        <button className="primary cross-run" disabled={busy}
+          onClick={() => onRun(urls)}>
+          {busy ? "Cross-verifying…" : "Cross-verify on-chain"}
+        </button>
+      </div>
+
+      {busy && (
+        <div className="consensus">
+          Reading every source live and reaching validator consensus. This runs
+          several web fetches plus one LLM reasoning pass, so it is slower than a
+          single analysis — usually 30–120 seconds.
+          {txHash && (
+            <> <a href={explorerTxUrl(txHash)} target="_blank" rel="noreferrer">
+              Track this transaction ↗
+            </a></>
+          )}
+        </div>
+      )}
+      {error && <div className="banner error">{error}</div>}
+
+      {latestReport && <CrossReportCard r={latestReport} />}
+    </section>
+  );
+}
+
+function CrossReportCard({ r }) {
+  const meta = VERDICT_META[r.verdict] || VERDICT_META.UNRESOLVABLE;
+  const cons = CONSISTENCY_META[r.consistency] || CONSISTENCY_META.INSUFFICIENT;
+  const flags = Array.isArray(r.red_flags) ? r.red_flags.filter(Boolean) : [];
+  const perSource = Array.isArray(r.per_source) ? r.per_source : [];
+  return (
+    <section className="feature cross-card" style={{ "--vc": meta.color }}>
+      <div className="feature-top">
+        <Gauge score={Number(r.trust_score) || 0} color={meta.color} />
+        <div className="feature-head">
+          <div className="cross-badges">
+            <span className="verdict-pill" style={{ background: meta.color }}>{meta.label}</span>
+            <span className="consistency-pill" style={{ "--cc": cons.color }}>{cons.label}</span>
+          </div>
+          <div className="cross-meta">
+            Cross-report <code>#{r.report_id}</code> · {perSource.length || r.requested_count} sources ·{" "}
+            {r.source_count} carried usable reviews
+          </div>
+          {r.summary && <p className="feature-summary">{r.summary}</p>}
+        </div>
+      </div>
+
+      {perSource.length > 0 && (
+        <div className="per-source">
+          <div className="flags-label">Per-source verdicts</div>
+          <div className="per-source-list">
+            {perSource.map((ps, i) => {
+              const pm = VERDICT_META[ps.verdict] || VERDICT_META.UNRESOLVABLE;
+              return (
+                <div className="per-source-row" key={i} style={{ "--vc": pm.color }}>
+                  <span className="ps-score" style={{ color: pm.color }}>{ps.trust_score}</span>
+                  <span className="ps-verdict" style={{ color: pm.color }}>{pm.label}</span>
+                  <a className="ps-url" href={ps.url} target="_blank" rel="noreferrer">{ps.url}</a>
+                  {ps.note && <span className="ps-note">{ps.note}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {flags.length > 0 && (
+        <div className="flags">
+          <div className="flags-label">Cross-platform red flags</div>
+          <ul>{flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReportsSection({ reports, loading, onSelect }) {
+  return (
+    <section className="explain" id="reports">
+      <div className="explain-eyebrow">Cross-verification history</div>
+      <h2 className="explain-title">Every multi-source report, verifiable on-chain</h2>
+      <p className="explain-lede">
+        Each report bundles several review pages for one product into a single
+        on-chain judgement — an overall verdict, a consistency label, and a
+        per-source breakdown. Click a row to expand it; click a source to open
+        the page it graded.
+      </p>
+      {loading ? (
+        <div className="empty">Loading…</div>
+      ) : reports.length === 0 ? (
+        <div className="empty">
+          No cross-reports yet. Scroll up to <em>Cross-verify</em>, paste the same
+          product on two or more platforms, and run it.
+        </div>
+      ) : (
+        <div className="report-list">
+          {reports.slice().reverse().map((r) => (
+            <ReportRow key={r.report_id} r={r} onSelect={() => onSelect(r)} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReportRow({ r, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const meta = VERDICT_META[r.verdict] || VERDICT_META.UNRESOLVABLE;
+  const cons = CONSISTENCY_META[r.consistency] || CONSISTENCY_META.INSUFFICIENT;
+  const perSource = Array.isArray(r.per_source) ? r.per_source : [];
+  const urls = Array.isArray(r.urls) ? r.urls : [];
+  const flags = Array.isArray(r.red_flags) ? r.red_flags.filter(Boolean) : [];
+  return (
+    <article className="report-card" style={{ "--vc": meta.color }}>
+      <button className="report-head" onClick={() => setOpen(!open)}>
+        <span className="score-chip" style={{ color: meta.color }}>{r.trust_score}</span>
+        <span className="row-verdict" style={{ color: meta.color }}>{meta.label}</span>
+        <span className="consistency-pill sm" style={{ "--cc": cons.color }}>{r.consistency}</span>
+        <span className="report-count">{urls.length || perSource.length} sources</span>
+        <span className="row-caret">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="report-body">
+          {r.summary && <p>{r.summary}</p>}
+          {perSource.length > 0 ? (
+            <div className="per-source-list">
+              {perSource.map((ps, i) => {
+                const pm = VERDICT_META[ps.verdict] || VERDICT_META.UNRESOLVABLE;
+                return (
+                  <div className="per-source-row" key={i} style={{ "--vc": pm.color }}>
+                    <span className="ps-score" style={{ color: pm.color }}>{ps.trust_score}</span>
+                    <span className="ps-verdict" style={{ color: pm.color }}>{pm.label}</span>
+                    <a className="ps-url" href={ps.url} target="_blank" rel="noreferrer">{ps.url}</a>
+                    {ps.note && <span className="ps-note">{ps.note}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            urls.length > 0 && (
+              <ul className="report-urls">
+                {urls.map((u, i) => (
+                  <li key={i}><a href={u} target="_blank" rel="noreferrer">{u} ↗</a></li>
+                ))}
+              </ul>
+            )
+          )}
+          {flags.length > 0 && (<>
+            <div className="flags-label">Cross-platform red flags</div>
+            <ul>{flags.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          </>)}
+          <div className="row-actions">
+            <button className="link-btn" onClick={(e) => { e.stopPropagation(); onSelect(); }}>
+              Open in cross-verify panel →
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
   );
 }
 

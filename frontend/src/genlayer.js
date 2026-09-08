@@ -6,7 +6,13 @@
 import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
+// Pinned latest deployment (Phase 3 / v0.4.0 on studionet). Used as the default
+// so the app is correct even when VITE_CONTRACT_ADDRESS is unset. Set the env
+// var to point the frontend at a different deployment (e.g. your own).
+export const DEFAULT_CONTRACT_ADDRESS =
+  "0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F";
+export const CONTRACT_ADDRESS =
+  import.meta.env.VITE_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
 export const EXPLORER_BASE = "https://explorer-studio.genlayer.com";
 export const explorerAddressUrl = (addr) => `${EXPLORER_BASE}/address/${addr}`;
 export const explorerTxUrl = (hash) => `${EXPLORER_BASE}/tx/${hash}`;
@@ -130,6 +136,47 @@ export async function fileAppeal(analysisId, reason, stakeWei, onTx) {
     status: "FINALIZED",
     interval: 5000,
     retries: 60,
+  });
+  return hash;
+}
+
+// ── Phase 3 — multi-source cross-verification ───────────────────────────────
+export async function listReports() {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "list_reports",
+    args: [],
+  });
+  return parseJSON(res, []);
+}
+
+export async function getReport(id) {
+  const res = await getClient().readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "get_report",
+    args: [id],
+  });
+  return parseJSON(res, null);
+}
+
+// urls: array of strings. Encoded as a single JSON-array string arg so calldata
+// stays a plain string (matches analyze/file_appeal). Takes 30–120s: several
+// live web reads + one LLM reasoning pass + consensus.
+export async function crossVerify(urls, onTx) {
+  const client = getClient();
+  const payload = JSON.stringify(urls);
+  const hash = await client.writeContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "cross_verify",
+    args: [payload],
+    value: 0n,
+  });
+  if (typeof onTx === "function") onTx(hash);
+  await client.waitForTransactionReceipt({
+    hash,
+    status: "FINALIZED",
+    interval: 5000,
+    retries: 72,
   });
   return hash;
 }

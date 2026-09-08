@@ -8,10 +8,11 @@ reviews look. It returns a verdict, a 0–100 trust score, and concrete red flag
 all stored on-chain.
 
 - **Live app:** https://reviewguard-chi.vercel.app/
-- **Deployed contract (v0.3.0):** [`0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`](https://explorer-studio.genlayer.com/address/0xda89fE3e166A21C4879fA8479F530B3e2e724eAe) on GenLayer **studionet** (status: Preview)
+- **Deployed contract (v0.4.0):** [`0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`](https://explorer-studio.genlayer.com/address/0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F) on GenLayer **studionet** (status: Preview)
 - **Docs:** [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [CHANGELOG.md](./CHANGELOG.md) · [ADR-0001](./docs/ADR-0001-consensus-choice.md) · [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **Milestone history**:
-  - v0.3.0 — Phase 2 appeal / dispute flow — `0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`
+  - v0.4.0 — Phase 3 multi-source cross-verification — `0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F`
+  - v0.3.0 — Phase 2 appeal / dispute flow (retired) — `0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`
   - v0.2.0 — Phase 1 hardening (retired) — `0x07c581dd42f4EEf985b32C4e62cc115dEF128585`
   - v0.1.0 — Explorer submission (retired) — `0x99e35870DBDDa556C5f11DF6542d6E31EA074655`
 - **Sample verdicts on-chain today:**
@@ -63,6 +64,7 @@ nondet call.
 reviewguard/
 ├── contracts/
 │   ├── ReviewGuard.py         # the Intelligent Contract (heart of the project)
+│   │                          #   analyze() · cross_verify() · file_appeal()
 │   └── storage_test.py        # minimal sanity contract — deploy FIRST
 ├── frontend/                  # genlayer-js + React (Vite) app
 │   ├── src/genlayer.js        # contract client wrapper
@@ -165,10 +167,31 @@ retry each call up to 3× with backoff via `retry_call` in `tests/conftest.py`.
 | Method | Kind | Purpose |
 |---|---|---|
 | `analyze(url)` | write | read the page on-chain + LLM-grade authenticity; stores + returns the new id |
+| `cross_verify(urls_json)` | write | **Phase 3** — read 2–5 pages for the *same* product across platforms, grade each + judge cross-source consistency; stores + returns a report id |
+| `file_appeal(analysis_id, reason)` | payable write | **Phase 2** — stake GEN to force an adversarial re-analysis |
 | `get_analysis(analysis_id)` | view | one analysis as JSON |
 | `list_analyses()` | view | all analyses as JSON |
 | `find_by_url(url)` | view | cached analysis for a URL (or `{}`) |
 | `get_total()` | view | number of analyses |
+| `get_report(id)` / `list_reports()` / `get_report_total()` | view | **Phase 3** cross-verification reports |
+| `get_appeal(id)` / `list_appeals()` / `appeals_for(id)` | view | **Phase 2** appeals |
+| `contract_version()` | view | app-level version string (`0.4.0`) |
+
+**Cross-report JSON shape (Phase 3):**
+```json
+{
+  "report_id": 0,
+  "urls": ["https://…", "https://…"],
+  "verdict": "TRUSTWORTHY | MIXED | SUSPICIOUS | UNRESOLVABLE",
+  "trust_score": 0,
+  "consistency": "CONSISTENT | DIVERGENT | INSUFFICIENT",
+  "per_source": [{ "url": "https://…", "verdict": "…", "trust_score": 0, "note": "…" }],
+  "red_flags": ["…"],
+  "summary": "…",
+  "source_count": 2,
+  "requested_count": 2
+}
+```
 
 Analysis JSON shape:
 ```json

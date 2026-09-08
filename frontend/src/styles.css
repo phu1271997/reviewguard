@@ -670,3 +670,83 @@ button:disabled { opacity: .55; cursor: progress; }
   .gauge-fill, .live-dot, .explain-card { transition: none; animation: none; }
   html { scroll-behavior: auto; }
 }
+
+/* ── PHASE 3 · CROSS-VERIFICATION ─────────────────────────────────────────── */
+.cross-panel { border-top: 3px solid var(--accent); }
+.cross-lede {
+  color: var(--ink-3); font-size: 14px; line-height: 1.6;
+  margin: 4px 0 18px; max-width: 760px;
+}
+.cross-fields { display: flex; flex-direction: column; gap: 8px; }
+.cross-field-row { display: flex; align-items: center; gap: 8px; }
+.cross-field-idx {
+  flex: 0 0 22px; height: 22px; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 50%;
+}
+.cross-field-row input {
+  flex: 1; padding: 11px 13px; border: 1px solid var(--line-strong);
+  border-radius: 10px; font-family: "JetBrains Mono", monospace; font-size: 13px;
+  background: var(--card); color: var(--ink);
+}
+.cross-field-row input:focus { outline: none; border-color: var(--accent); }
+.cross-remove {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  cursor: pointer; font-size: 18px; line-height: 1;
+}
+.cross-remove:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+.cross-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px;
+}
+.cross-run { margin-left: auto; }
+
+.consistency-pill {
+  display: inline-block; padding: 4px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: var(--cc, var(--muted));
+  border: 1.5px solid var(--cc, var(--line));
+  background: color-mix(in srgb, var(--cc, var(--muted)) 10%, transparent);
+}
+.consistency-pill.sm { padding: 2px 9px; font-size: 11px; }
+.cross-badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cross-meta { font-size: 12px; color: var(--muted); margin: 8px 0 2px; }
+
+.per-source { margin-top: 18px; }
+.per-source-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.per-source-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card-alt); border-left: 3px solid var(--vc, var(--line));
+}
+.ps-score { flex: 0 0 34px; font-weight: 700; font-size: 15px; }
+.ps-verdict { flex: 0 0 130px; font-size: 12px; font-weight: 600; }
+.ps-url {
+  flex: 1 1 240px; font-family: "JetBrains Mono", monospace; font-size: 12px;
+  color: var(--ink-3); text-decoration: none; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.ps-url:hover { color: var(--accent); }
+.ps-note { flex: 1 1 100%; font-size: 12px; color: var(--muted); }
+
+.cross-card { border-top: 3px solid var(--vc); }
+
+/* ── PHASE 3 · REPORTS LIST ───────────────────────────────────────────────── */
+.report-list { display: flex; flex-direction: column; gap: 10px; }
+.report-card {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  border-left: 3px solid var(--vc, var(--line)); overflow: hidden;
+}
+.report-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; background: none; border: none; cursor: pointer; text-align: left;
+}
+.report-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+.report-body { padding: 0 16px 16px; font-size: 14px; color: var(--ink-3); }
+.report-body p { margin: 0 0 12px; }
+.report-urls { margin: 8px 0; padding-left: 18px; }
+.report-urls a { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+
+@media (max-width: 640px) {
+  .cross-run { margin-left: 0; width: 100%; }
+  .ps-verdict { flex-basis: 100px; }
+}

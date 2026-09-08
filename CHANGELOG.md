@@ -4,6 +4,71 @@ All notable changes to ReviewGuard are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with
 milestone tags aligned to the GenLayer Builder Program Milestone submissions.
 
+## [0.4.0] — 2026-09-08 — Phase 3: Multi-Source Cross-Verification Engine
+
+Bundle submitted as Phase 3 Milestone. Contract redeployed on studionet at
+`0x2050ECca0C28dE9fef24F1Dac2BC7D71b8C7848F` (previous: `0xda89fE3e166A21C4879fA8479F530B3e2e724eAe`).
+
+### Feature — Cross-platform verification (rubric Loai 3 major feature + 1b multi-source)
+
+Until now every judgement graded **one** page. A single page can be gamed in
+isolation: a seller floods one marketplace with 5-star fakes while the same
+product looks mediocre or fake everywhere else. Single-page analysis is blind
+to that contradiction. Phase 3 makes the engine cross-platform.
+
+- **New write** `cross_verify(urls_json: str) -> int` accepts a JSON array of
+  2–5 URLs for the *same* product across different platforms. In **one**
+  non-deterministic block it renders **every** source live on-chain, then runs
+  a single LLM reasoning pass that does two things:
+  1. grades each source independently for authenticity, and
+  2. judges **cross-source consistency** — do the platforms agree?
+- **Consistency is a first-class, on-chain conclusion**: `CONSISTENT`,
+  `DIVERGENT` (platforms disagree → strong manipulation signal that pulls the
+  overall trust score down), or `INSUFFICIENT` (fewer than two readable
+  sources). Divergence between platforms is exactly the astroturfing pattern a
+  single-page check cannot see.
+- **New equivalence principle** `CROSS_PRINCIPLE`: on top of the tightened
+  verdict-label + score-within-15 rules, validators must **also** agree on the
+  consistency label, so "the platforms disagree" cannot be decided by a single
+  validator.
+- **New storage struct** `CrossReport` (`@allow_storage @dataclass`) records
+  the source URLs, consolidated verdict + trust score, consistency label, a
+  per-source breakdown (`per_source` JSON: url / verdict / score / note),
+  cross-platform red flags, summary, readable-source count, and requested
+  count.
+- **New views**: `get_report(id)`, `get_report_total()`, `list_reports()`.
+- **Input hardening carried over**: every URL is validated (scheme, length,
+  control chars) **before** any fetch; duplicates are de-duplicated; the
+  per-source cap (`MAX_CROSS_PAGE_LEN = 4200`) keeps the combined prompt
+  bounded; the injection canary treats any source containing it as unreadable
+  rather than letting spoofed text into the prompt; graceful degradation to
+  `UNRESOLVABLE` / `INSUFFICIENT` instead of reverting when pages are dead.
+
+### Contract API
+- `contract_version()` bumped to `"0.4.0"`.
+- Storage: added `reports: TreeMap[str, CrossReport]` and
+  `next_report_id: bigint`.
+
+### Frontend
+- **New "Cross-verify" section** with 2–5 dynamic URL fields (add/remove),
+  a one-click multi-platform sample, and a live "Track this transaction ↗"
+  link during the consensus wait.
+- **Cross-report result card**: consolidated trust gauge, verdict pill, a
+  colour-coded **consistency pill**, per-source verdict breakdown, and
+  cross-platform red flags.
+- **New "Reports" history section** listing every stored cross-report with an
+  expandable per-source breakdown; new "Reports" + "Cross-verify" nav anchors.
+- **Stats strip** now surfaces cross-report and divergent-report counts.
+- Header live chip bumped to `v0.4.0`; `VITE_CONTRACT_ADDRESS` swapped on
+  Vercel Production to the v0.4.0 address.
+
+### Tests
+- New `tests/test_cross_verify.py` (11 cases): view invariants at zero state,
+  single-source rejection, empty-list rejection, duplicate-collapse below the
+  minimum, over-cap (>5) rejection, bad-scheme / control-char rejection across
+  parametrized inputs, and a slow happy-path that renders two live pages and
+  asserts the full stored `CrossReport` schema.
+
 ## [0.3.0] — 2026-08-30 — Phase 2: Appeal / Dispute Flow
 
 Bundle submitted as Phase 2 Milestone. Contract redeployed on studionet at
